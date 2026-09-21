@@ -17,6 +17,30 @@ A web app where a user uploads a plant-leaf image; a CNN predicts the disease cl
 | Observability | Highlight.io (Phase 8) |
 | Deploy | Vercel (frontend), Render/Railway (API), Supabase (DB), added in Phase 8 |
 
+## 2b. Architecture
+
+Browser (Next.js + Tailwind, localhost:3000)
+   |  POST /predict (multipart image)
+   v
+FastAPI (localhost:8000)
+   |-- 1. validate image (type, size)
+   |-- 2. [Phase 5] Gemini leaf pre-check -> reject if not a leaf
+   |-- 3. preprocess (see ml/export/preprocessing.json) and run ONNX model
+   |-- 4. top-3 + confidence; is_uncertain if top confidence < threshold
+   |-- 5. upload image to Supabase Storage, insert row in predictions
+   |-- 6. [Phase 5] fetch/generate advice from disease_info (cached; Gemini only on cache miss)
+   v
+Response JSON -> result card. History page reads via GET /predictions.
+
+### Who does what
+- Stitch: designs the 3 screens (upload+result, history, detail), exports React/Tailwind.
+- Antigravity IDE: moves screens into Next.js and wires them to the API.
+- Google AI Studio: prototype and test Gemini prompts (advice, leaf check) before they go in the backend.
+- Supabase: Postgres for predictions and disease_info, Storage for images. Auth and RLS come in Phase 7.
+- ONNX Runtime: the only thing that classifies. Gemini never classifies.
+- AI chat assistant: writes backend and ML code from this file.
+- Highlight.io: errors and session replay, Phase 8 only.
+
 ## 3. Constraints and working rules
 - No Claude Code. Backend is written with an AI chat assistant and refined in Antigravity.
 - Auth, Highlight.io and deployment are LAST. Until Phase 7 there is no login and RLS is off.
@@ -26,7 +50,7 @@ A web app where a user uploads a plant-leaf image; a CNN predicts the disease cl
 - Commit to Git after every working step.
 
 ## 4. Roadmap and current status
-- [ ] Phase 0: Project setup   <- IN PROGRESS
+- [x] Phase 0: Project setup   <- IN PROGRESS
 - [ ] Phase 1: Train the model (PlantVillage, MobileNetV2, export ONNX + labels.json)
 - [ ] Phase 2: Supabase (tables, storage bucket, no auth)
 - [ ] Phase 3: FastAPI backend (/predict + history endpoints)
