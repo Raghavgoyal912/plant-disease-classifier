@@ -33,15 +33,15 @@ FastAPI (localhost:8000)
 Response JSON -> result card. History page reads via GET /predictions.
 
 ### Who does what
-- Stitch: designs the 3 screens (upload+result, history, detail), exports React/Tailwind.
-- Antigravity IDE: moves screens into Next.js and wires them to the API.
+- Stitch: designs the 3 screens (upload+result, history, detail), exports React/Tailwind. For Phase 6b, also used for motion-forward visual design and kinetic UI concepts, but actual animation implementation (Framer Motion) happens in Antigravity, not Stitch itself - Stitch's animation output is concept/static, not production interaction code.
+- Antigravity IDE: moves screens into Next.js and wires them to the API. For Phase 6b, also implements real animations (Framer Motion / motion/react) on top of Stitch's motion-forward designs.
 - Google AI Studio: prototype and test Gemini prompts (advice, leaf check) before they go in the backend.
 - Supabase: Postgres for predictions and disease_info, Storage for images. Auth and RLS come in Phase 7.
 - ONNX Runtime: the only thing that classifies. Gemini never classifies.
 - AI chat assistant: writes backend and ML code from this file.
 - Highlight.io: errors and session replay, Phase 8 only.
 
-**Note (Phase 4 deviation, see section 8):** the actual Phase 4 frontend was hand-built directly by the AI chat assistant instead of via Stitch → Antigravity, because the user preferred to reuse an already-built implementation rather than repeat a design pass. This section describes the intended pipeline; section 8 records why Phase 4 diverged from it, and section 10 has the follow-up plan.
+**Note (Phase 4 deviation, see section 8):** the actual Phase 4 frontend was hand-built directly by the AI chat assistant instead of via Stitch → Antigravity, because the user preferred to reuse an already-built implementation rather than repeat a design pass. This section describes the intended pipeline; section 8 records why Phase 4 diverged from it, and Phase 6b (section 4) is when the real Stitch → Antigravity pipeline is picked back up for the visual/motion redesign.
 
 ## 3. Constraints and working rules
 - No Claude Code. Backend is written with an AI chat assistant and refined in Antigravity.
@@ -58,19 +58,18 @@ Response JSON -> result card. History page reads via GET /predictions.
 - [x] Phase 1: Train the model (PlantVillage, MobileNetV2, export ONNX + labels.json)
 - [x] Phase 2: Supabase (tables, storage bucket, no auth)
 - [x] Phase 3: FastAPI backend (/predict + history endpoints) — see section 9 for a concurrency bug found and fixed after initial sign-off
-- [ ] Phase 4: Frontend (Stitch screens, Antigravity wiring)   <- IN PROGRESS, blocked (see below)
-- [ ] Phase 5: Gemini features (advice + leaf pre-check)
+- [x] Phase 4: Frontend (Stitch screens, Antigravity wiring) — functional wiring complete, both open bugs resolved (see section 9). Visual design intentionally left as the hand-built stopgap (section 8); real redesign deferred to Phase 6b.
+- [ ] Phase 5: Gemini features (advice + leaf pre-check)   <- IN PROGRESS
 - [ ] Phase 6: Polish (low-confidence UX, feedback button, filters, stats, evaluation write-up)
+- [ ] Phase 6b: Motion frontend redesign — redo the 3 screens via Stitch with a motion-forward direction (see section 8 for what Stitch can/can't do here), then implement real animations (Framer Motion) in Antigravity. Scheduled after Polish, before Auth.
 - [ ] Phase 7: Auth (Supabase Auth, JWT check in FastAPI, RLS)
 - [ ] Phase 8: Ship (Highlight.io, Docker, deploy, README)
 
-**Currently working on:** Phase 4. Functional wiring is done but not checked off yet — two open bugs below block calling it complete, and the visual design is intentionally being left as-is for now (user plans to redo it via Stitch later per section 2b's actual pipeline; the hand-built version was a stopgap, see section 8).
+**Currently working on:** Phase 5 — Gemini leaf pre-check on `POST /predict`, plus Gemini-generated advice via `disease_info` (cached, Gemini only on cache miss), returned in `PredictResponse.advice`. Per the user's note, only wire the `advice` field into the existing result card minimally — no frontend redesign as part of this phase (that's Phase 6b).
 
-**Last thing that worked:** Frontend (Next.js + Tailwind) built against the real backend contract, confirmed field-for-field from the actual `routes/predictions.py`, `routes/predict.py`, `schemas.py`, `db.py`, `main.py`, `model.py`, and `config.py` (not assumed). `app/page.tsx` (Classify) verified end-to-end with real photos: `POST /predict` returns a genuine top-3 result, and the `is_uncertain` banner correctly triggers below the 0.60 threshold — confirmed on several real-world photos, all landing between 10–25% confidence (see section 9, this is now a confirmed pattern, not a single unlucky test image). `app/history/page.tsx` lists real rows with correct label/confidence/timestamp, after fixing a genuine Phase 3 bug: every handler in `routes/predict.py` and `routes/predictions.py` was declared `async def` while calling fully synchronous Supabase/ONNX code inside — this blocks FastAPI's single event loop for every other request while one is in flight (e.g. History would hang while a Classify call was running). Fixed by converting all five route handlers to plain `def`, so FastAPI runs each in a threadpool instead.
+**Last thing that worked:** `POST /predict` end-to-end in ~5.5s total (file-read 0.02s, inference 0.8s, `db.upload_image` 4.2s, `db.get_public_url` ~0s, `db.insert_prediction` 0.45s) — confirmed by the user after the IPv4-only DNS fix (section 8/9). History and Detail pages both confirmed rendering real thumbnails correctly with no image-loading issue.
 
-**Current problem(s):**
-1. `POST /predict` still takes 15+ seconds in isolation — not a concurrency symptom; confirmed after the async→def fix and a full backend restart. Nothing in `model.py`/`config.py` explains this by itself (ONNX inference on CPU should be sub-second), so the two Supabase network calls inside `predict()` (`db.upload_image`, `db.insert_prediction`) are the leading suspect. A temporarily instrumented `routes/predict.py` (timing prints around file-read, inference, upload, get_public_url, and insert) has been handed to the user; root cause is pending that timing output.
-2. History/detail thumbnail images still fail to load even after correctly setting `NEXT_PUBLIC_SUPABASE_URL` in `frontend/.env.local` and restarting the dev server. Root cause not yet found — next step is inspecting the actual `<img>` `src` / Network tab response for one broken image (404 vs 403 vs empty string).
+**Current problem(s):** none open. Both Phase 4 bugs (section 9) are resolved and user-confirmed.
 
 ## 5. Folder structure
 ```
@@ -166,8 +165,10 @@ Storage bucket: `plant-images` (public).
 - Added indexes on `predictions.created_at` (desc) and `predictions.predicted_label` to support the paginated/filtered `GET /predictions` contract in section 6.
 - **Root project folder is named `project/`, not `plant-disease-classifier/`** — section 5 corrected to match.
 - **All FastAPI route handlers in `routes/predict.py` and `routes/predictions.py` are plain `def`, not `async def`.** Every one of them calls synchronous Supabase-client or ONNX code; wrapping that in `async def` blocks FastAPI's single event loop for every other in-flight request. Plain `def` routes run in a threadpool automatically. This was a real bug (History would hang behind a slow Classify call) found and fixed after Phase 3 was initially marked done — see section 9.
-- **`GET /predictions` and `GET /predictions/{id}` return `image_path` (a raw Storage path), not a full URL** — only `POST /predict`'s response already includes one (built server-side via `db.get_public_url`). The frontend reconstructs the public URL itself via `lib/storage.ts`'s `buildImageUrl()`, which needs `NEXT_PUBLIC_SUPABASE_URL` set in `frontend/.env.local` to the real Supabase project URL. (As of this update, thumbnails still aren't loading even with this set — open issue, section 9.)
-- **Phase 4's frontend was hand-built directly**, not via Stitch → Antigravity as section 2b describes, because the user chose to reuse an already-built implementation rather than repeat the design step. The user has said they don't like the current visual design and plans to redo the three screens' UI via Stitch later; the wiring/logic files (`lib/api.ts`, `lib/format.ts`, `lib/storage.ts`) are expected to carry over unchanged into that redesign, since they're plumbing, not visual design.
+- **`GET /predictions` and `GET /predictions/{id}` return `image_path` (a raw Storage path), not a full URL** — only `POST /predict`'s response already includes one (built server-side via `db.get_public_url`). The frontend reconstructs the public URL itself via `lib/storage.ts`'s `buildImageUrl()`, which needs `NEXT_PUBLIC_SUPABASE_URL` set in `frontend/.env.local` to the real Supabase project URL. Confirmed working correctly on both History and Detail pages (section 9) — the earlier suspected bug did not reproduce once actually inspected.
+- **Phase 4's frontend was hand-built directly**, not via Stitch → Antigravity as section 2b describes, because the user chose to reuse an already-built implementation rather than repeat the design step. The wiring/logic files (`lib/api.ts`, `lib/format.ts`, `lib/storage.ts`) are expected to carry over unchanged into the Phase 6b redesign, since they're plumbing, not visual design.
+- **IPv4-only DNS resolution workaround, added in `db.py` (2026-09-27):** the dev machine's network resolves the Supabase host to two IPv6 addresses in the `64:ff9b::/96` NAT64-synthesized range, which aren't actually routable here. The OS tried those first on every new connection, hanging ~21s each (~43s total) before falling back to the real IPv4 address — this, not the ONNX model, was the entire cause of the 15+ second `/predict` latency (confirmed via a standalone socket-level diagnostic: forced-IPv4 connects in ~0.06s vs ~42s default). Fixed by monkey-patching `socket.getaddrinfo` in `db.py` to filter out non-IPv4 results at import time. Environment-specific — worth re-checking once deployed to Render/Railway in Phase 8 (harmless to leave in either way).
+- **Stitch's motion/animation capability is limited, confirmed via research (2026-09-27):** Stitch can generate motion-forward visual concepts and "kinetic UI," but does not produce production animation code — reviews are consistent that real interaction/animation implementation still needs a dedicated tool. Decision: Phase 6b will use Stitch for the visual redesign direction, then implement actual animations with Framer Motion (`motion/react`) in Antigravity, same division of labor as the existing Stitch → Antigravity pipeline.
 
 ## 9. Known issues and next steps
 - PlantVillage images are lab-style; the 99.48% test accuracy is on held-out images from the same distribution, not real phone photos. **Now confirmed as a real pattern, not a one-off**: multiple real-world test photos (natural lighting, cluttered/dark backgrounds, visible insect damage) all landed at 10–25% confidence with scattered, unrelated top-3 labels. `is_uncertain` correctly flags all of them rather than hiding them, but expect a meaningfully lower real-world accuracy than the reported test number, and plan real-world-style UX (Phase 6) accordingly.
@@ -175,9 +176,9 @@ Storage bucket: `plant-images` (public).
 - Weakest classes (still >93% F1), worth extra attention in real-world testing: Potato___healthy, Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot, Tomato___Early_blight, Tomato___Late_blight, Corn_(maize)___Northern_Leaf_Blight.
 - disease_info.label (Phase 5) must match labels.json strings exactly, character-for-character - generate seed rows from labels.json programmatically rather than retyping, to avoid a silent lookup mismatch.
 - **Resolved:** `routes/predict.py` and `routes/predictions.py` had `async def` handlers wrapping synchronous Supabase/ONNX calls, blocking the whole server per-request. Fixed by converting all five handlers to plain `def`.
-- **Open:** `POST /predict` takes 15+ seconds in isolation, even after the fix above. Suspected cause is the Supabase upload/insert calls inside `predict()`, not the model — needs the timing breakdown from the instrumented `routes/predict.py` handed to the user (prints time for file-read, `model.predict_image`, `db.upload_image`, `db.get_public_url`, `db.insert_prediction`).
-- **Open:** History/detail thumbnails don't load, even with `NEXT_PUBLIC_SUPABASE_URL` correctly set and the frontend dev server restarted. Next step: inspect the actual `<img>` `src` being rendered and the Network tab response for that image request (404 / 403 / empty string all point to different causes).
-- Next: resolve both open issues above, then start Phase 5 (Gemini leaf pre-check + advice generation, scoped together per the user's choice) — see section 10 for the ready-to-use starter prompt.
+- **Resolved:** `POST /predict` took 15+ seconds even after the async→def fix. Root cause: broken NAT64 IPv6 address resolution to the Supabase host on this network, adding ~43s per connection (see section 8). Fixed via an IPv4-only DNS patch in `db.py`. Confirmed by the user: total request time now ~5.5s.
+- **Resolved:** History/detail thumbnails were suspected broken but turned out to be loading correctly on both the History and Detail pages once actually checked — no code change was needed.
+- Next: Phase 5 (Gemini leaf pre-check + advice generation) is in progress. Phase 6b (motion frontend redesign) is scheduled after Phase 6 Polish, before Phase 7 Auth — see section 8 for the Stitch + Framer Motion approach.
 
 ## 10. Next session starter prompt
 Copy everything below (with the current PROJECT_CONTEXT.md pasted in) to start the next session.
@@ -189,36 +190,25 @@ including the architecture section and the working rules.
 
 [PASTE THE FULL CONTENTS OF PROJECT_CONTEXT.md HERE]
 
-CURRENT PHASE: finish Phase 4 (open bugs), then Phase 5 (Gemini leaf pre-check + advice)
-WHAT I'M DOING RIGHT NOW: two Phase 4 bugs are still open and must be fixed first -
-see section 4 "Current problem(s)" and section 9. Do not start Phase 5 work until
-both are resolved and confirmed working by me.
+CURRENT PHASE: Phase 5 (Gemini leaf pre-check + advice), then Phase 6, then Phase 6b
+(motion frontend redesign via Stitch + Framer Motion), then Phase 7 (Auth)
+WHAT I'M DOING RIGHT NOW: Phase 4 is fully complete (both bugs resolved and confirmed).
+Currently building Phase 5: Gemini leaf pre-check + advice generation.
 BACKEND PLATFORM: local venv (backend from Phase 3 running on localhost:8000,
 frontend from Phase 4 running on localhost:3000)
 PROBLEM OR TASK:
-1. First, help me finish diagnosing and fixing the two open issues in section 4:
-   (a) POST /predict taking 15+ seconds - I will share the timing output from the
-       instrumented routes/predict.py you gave me; use it to find the real slow
-       step and fix it, then revert the instrumentation.
-   (b) History/detail thumbnails not loading even with NEXT_PUBLIC_SUPABASE_URL
-       set correctly - help me inspect the actual broken image URL and fix
-       whatever mismatch is causing it.
-2. Once both are confirmed fixed and I've verified them myself, start Phase 5 per
-   section 2b and section 6: add the Gemini "is this a leaf?" pre-check to
-   POST /predict (reject non-leaf images before running ONNX inference), and add
-   Gemini-generated advice via the disease_info table (cached; call Gemini only
+1. Add the Gemini "is this a leaf?" pre-check to POST /predict per section 2b and
+   section 6 (reject non-leaf images before running ONNX inference).
+2. Add Gemini-generated advice via the disease_info table (cached; call Gemini only
    on a cache miss), returned in PredictResponse.advice.
-3. Note: the Phase 4 frontend's visual design was hand-built directly rather than
-   through Stitch (see section 8) and I plan to redo the 3 screens' UI via Stitch
-   later. Do not redesign the frontend as part of Phase 5 - only wire the new
-   `advice` field into the existing result card, minimally.
+3. Only wire the new `advice` field into the existing result card, minimally - do
+   not redesign the frontend as part of Phase 5 (that's Phase 6b, later).
 
 RULES
 - Follow section 2b's "who does what" - if a task belongs to Stitch, Antigravity,
   Google AI Studio, or another named tool/person, say so and don't silently do it
   yourself instead. Ask me first if you're unsure whose job something is.
-- Only work on the current phase (finishing Phase 4's bugs, then Phase 5). Do not
-  start Phase 6/7/8 work.
+- Only work on the current phase (Phase 5). Do not start Phase 6/6b/7/8 work.
 - Follow the folder structure, file names and paths in PROJECT_CONTEXT.md exactly
   - root folder is `project/`, not `plant-disease-classifier/`.
 - Before assuming any API response shape, check section 6 - it is now confirmed

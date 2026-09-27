@@ -4,13 +4,38 @@ CRUD on the `predictions` table (schema in PROJECT_CONTEXT.md section 7).
 
 Uses the service-role key server-side only. RLS is off until Phase 7, so
 there is no user_id scoping here yet - every row is currently global.
+
+NETWORKING WORKAROUND (see PROJECT_CONTEXT.md section 8/9):
+This machine's network resolves the Supabase host to two IPv6 addresses in
+the 64:ff9b::/96 NAT64-synthesized range, which are not actually routable
+here. The OS tries those first on every new connection and hangs ~21s on
+each before falling back to the real IPv4 address - adding ~43s to every
+Supabase call (confirmed via a standalone socket-level diagnostic: IPv4-only
+connects in ~0.06s, default resolution takes ~42s). Patching
+`socket.getaddrinfo` to only return IPv4 results skips the broken addresses
+entirely. This is applied once, at import time, before the Supabase client
+opens any connections.
 """
+import socket
 import uuid
 from typing import Optional
 
 from supabase import create_client, Client
 
 from app.config import settings
+
+# --- IPv4-only DNS workaround (see module docstring) ---
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _ipv4_only_getaddrinfo(*args, **kwargs):
+    results = _original_getaddrinfo(*args, **kwargs)
+    ipv4_only = [r for r in results if r[0] == socket.AF_INET]
+    return ipv4_only or results  # fall back to unfiltered results if somehow none are IPv4
+
+
+socket.getaddrinfo = _ipv4_only_getaddrinfo
+# --- end workaround ---
 
 _client: Optional[Client] = None
 
