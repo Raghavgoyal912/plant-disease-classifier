@@ -3,7 +3,7 @@ Centralized settings, loaded from environment variables / a local .env file.
 See .env.example for the full list of variables this expects.
 
 Per PROJECT_CONTEXT.md section 3: secrets live only in .env (never committed),
-and the Supabase service-role key is server-side only.
+and the Supabase service-role key and Gemini key are server-side only.
 """
 from pydantic_settings import BaseSettings
 
@@ -13,6 +13,16 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_STORAGE_BUCKET: str = "plant-images"
+
+    # Gemini (Phase 5: leaf pre-check + advice). Server-side only.
+    # If GEMINI_API_KEY is empty, both Gemini features are skipped (the leaf
+    # check fails open, advice is null) and the backend still starts.
+    GEMINI_API_KEY: str = ""
+    # Set GEMINI_MODEL in .env to the exact model ID you tested your prompts
+    # with in Google AI Studio. (gemini-2.5-* models are scheduled to shut
+    # down on 2026-10-16, so do not use them.)
+    GEMINI_MODEL: str = "gemini-3.1-flash-lite"
+    GEMINI_TIMEOUT_SECONDS: float = 10.0
 
     # Model artifacts (Phase 1 output, see ml/export/)
     MODEL_DIR: str = "../ml/export"  # path is relative to the backend/ working directory

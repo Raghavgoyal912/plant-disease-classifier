@@ -6,3 +6,4 @@ onnxruntime
 numpy
 pillow
 supabase
+google-genai

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { predict, PredictionResult } from "@/lib/api";
+import { predict, PredictResponse } from "@/lib/api";
 import { formatLabel, formatPercent } from "@/lib/format";
 
 const CONFIDENCE_THRESHOLD_PERCENT = 60; // section 8: 0.60 threshold
@@ -11,7 +11,7 @@ export default function ClassifyPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PredictionResult | null>(null);
+  const [result, setResult] = useState<PredictResponse | null>(null);
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const selected = e.target.files?.[0] ?? null;
@@ -133,6 +133,28 @@ export default function ClassifyPage() {
                 </div>
               ))}
             </div>
+
+            {result.advice && (
+              <div className="mt-5 border-t border-line pt-4 space-y-3 text-sm">
+                <p className="text-forestDark">{result.advice.summary}</p>
+                <div>
+                  <h3 className="font-serif text-forestDark">Symptoms</h3>
+                  <p className="text-muted">{result.advice.symptoms}</p>
+                </div>
+                <div>
+                  <h3 className="font-serif text-forestDark">Treatment</h3>
+                  <p className="text-muted">{result.advice.treatment}</p>
+                </div>
+                <div>
+                  <h3 className="font-serif text-forestDark">Prevention</h3>
+                  <p className="text-muted">{result.advice.prevention}</p>
+                </div>
+                <p className="text-xs text-muted">
+                  AI-generated general information, not professional
+                  agronomic advice.
+                </p>
+              </div>
+            )}
 
             <p className="mt-4 text-xs text-muted">
               Reliable results are {CONFIDENCE_THRESHOLD_PERCENT}% confidence

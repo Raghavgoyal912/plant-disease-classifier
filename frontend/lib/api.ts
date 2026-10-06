@@ -11,6 +11,15 @@ export interface Top3Item {
   confidence: number;
 }
 
+// Phase 5: plain-language advice for the predicted class (mirrors the Advice
+// model in backend/app/schemas.py and the disease_info table).
+export interface Advice {
+  summary: string;
+  symptoms: string;
+  treatment: string;
+  prevention: string;
+}
+
 // Returned by POST /predict only. Already includes a full image_url.
 export interface PredictResponse {
   id: string;
@@ -20,7 +29,7 @@ export interface PredictResponse {
   is_uncertain: boolean;
   image_url: string;
   model_version: string;
-  advice?: string | null; // Phase 5 field; always null for now
+  advice?: Advice | null; // null when uncertain or Gemini unavailable
 }
 
 // Returned by GET /predictions, GET /predictions/{id}, and
@@ -47,16 +56,38 @@ export interface PaginatedPredictions {
   total: number;
 }
 
+// Thrown for any non-2xx response. `code` is set when the backend sent a
+// structured detail ({ code, message }), e.g. "not_a_leaf" from POST /predict.
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let detail = res.statusText;
+    let message = `API error ${res.status}: ${res.statusText}`;
+    let code: string | undefined;
     try {
       const body = await res.json();
-      detail = body.detail ?? JSON.stringify(body);
+      const d = body.detail;
+      if (d && typeof d === "object" && typeof d.message === "string") {
+        // Structured detail (Phase 5): the message is already user-facing.
+        message = d.message;
+        code = typeof d.code === "string" ? d.code : undefined;
+      } else {
+        message = `API error ${res.status}: ${typeof d === "string" ? d : JSON.stringify(d ?? body)
+          }`;
+      }
     } catch {
-      // response body wasn't JSON; fall back to statusText
+      // response body wasn't JSON; keep the statusText message
     }
-    throw new Error(`API error ${res.status}: ${detail}`);
+    throw new ApiError(message, res.status, code);
   }
   // DELETE returns 204 with no body
   if (res.status === 204) {

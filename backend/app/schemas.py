@@ -13,6 +13,16 @@ class Top3Item(BaseModel):
     confidence: float
 
 
+class Advice(BaseModel):
+    """Plain-language advice for one disease class. Mirrors the four text
+    columns of the `disease_info` table (section 7). Also used as the
+    Gemini structured-output schema in app/gemini.py."""
+    summary: str
+    symptoms: str
+    treatment: str
+    prevention: str
+
+
 class PredictResponse(BaseModel):
     id: str
     label: str
@@ -21,7 +31,9 @@ class PredictResponse(BaseModel):
     is_uncertain: bool
     image_url: str
     model_version: str
-    advice: Optional[str] = None  # wired up in Phase 5; always null for now
+    # Phase 5: null when the prediction is uncertain, or when Gemini/cache
+    # lookup is unavailable. Never present on PredictionRecord.
+    advice: Optional[Advice] = None
 
 
 class PredictionRecord(BaseModel):

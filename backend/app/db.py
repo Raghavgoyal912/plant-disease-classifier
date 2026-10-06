@@ -1,6 +1,7 @@
 """
-Supabase access layer: image upload to the `plant-images` bucket, plus
-CRUD on the `predictions` table (schema in PROJECT_CONTEXT.md section 7).
+Supabase access layer: image upload to the `plant-images` bucket, CRUD on
+the `predictions` table, and get/upsert on the `disease_info` advice cache
+(schema in PROJECT_CONTEXT.md section 7).
 
 Uses the service-role key server-side only. RLS is off until Phase 7, so
 there is no user_id scoping here yet - every row is currently global.
@@ -18,6 +19,7 @@ opens any connections.
 """
 import socket
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from supabase import create_client, Client
@@ -113,3 +115,32 @@ def update_feedback(prediction_id: str, correct: bool, corrected_label: Optional
         .execute()
     )
     return result.data[0] if result.data else None
+
+
+# --- disease_info: cache for Gemini-generated advice (Phase 5) ---
+
+def get_disease_info(label: str) -> Optional[dict]:
+    """Return the cached disease_info row for this exact label string
+    (must match labels.json character-for-character), or None on a miss."""
+    client = get_client()
+    result = client.table("disease_info").select("*").eq("label", label).execute()
+    return result.data[0] if result.data else None
+
+
+def upsert_disease_info(label: str, advice: dict) -> None:
+    """Insert or overwrite the cached advice for one label. `advice` must have
+    summary/symptoms/treatment/prevention keys. generated_by keeps its table
+    default ('gemini'); updated_at is set explicitly so overwrites are dated."""
+    client = get_client()
+    client.table("disease_info").upsert(
+        {
+            "label": label,
+            "summary": advice["summary"],
+            "symptoms": advice["symptoms"],
+            "treatment": advice["treatment"],
+            "prevention": advice["prevention"],
+            "generated_by": "gemini",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        on_conflict="label",
+    ).execute()
