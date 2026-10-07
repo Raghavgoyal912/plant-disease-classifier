@@ -23,6 +23,15 @@ class Advice(BaseModel):
     prevention: str
 
 
+class DiseaseInfoResponse(BaseModel):
+    """Response model for GET /disease-info/{label}."""
+    summary: str
+    symptoms: str
+    treatment: str
+    prevention: str
+
+
+
 class PredictResponse(BaseModel):
     id: str
     label: str

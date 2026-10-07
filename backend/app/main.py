@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import model
 from app.config import settings
-from app.routes import predict, predictions
+from app.routes import disease_info, predict, predictions
 
 app = FastAPI(title="Plant Disease Classifier API", version=settings.MODEL_VERSION)
 
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(predict.router)
 app.include_router(predictions.router)
+app.include_router(disease_info.router)
 
 
 @app.on_event("startup")

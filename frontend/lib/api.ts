@@ -145,3 +145,13 @@ export async function sendFeedback(
   });
   return handleResponse<PredictionRecord>(res);
 }
+
+export async function getDiseaseInfo(label: string): Promise<Advice | null> {
+  const res = await fetch(
+    `${API_BASE_URL}/disease-info/${encodeURIComponent(label)}`
+  );
+  if (res.status === 404) {
+    return null;
+  }
+  return handleResponse<Advice>(res);
+}

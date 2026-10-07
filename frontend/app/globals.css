@@ -2,11 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-html {
-  -webkit-font-smoothing: antialiased;
+@layer base {
+  body {
+    background-color: #EAF3E1;
+    color: #222222;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: #BFB33B;
+    color: #222222;
+  }
+
+  :focus-visible {
+    outline: 2px solid #5E8C61;
+    outline-offset: 2px;
+  }
 }
 
-:focus-visible {
-  outline: 2px solid #2f5233;
-  outline-offset: 2px;
-}
