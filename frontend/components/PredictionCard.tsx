@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { motion } from "motion/react";
 import type { PredictionRecord } from "@/lib/api";
-import { buildImageUrl } from "@/lib/storage";
 import { formatLabel, formatPercent } from "@/lib/format";
 
 interface PredictionCardProps {
@@ -12,7 +11,8 @@ interface PredictionCardProps {
 }
 
 export function PredictionCard({ prediction, index }: PredictionCardProps) {
-  const imageUrl = buildImageUrl(prediction.image_path);
+  // Signed URL from the backend (private bucket, Phase 7).
+  const imageUrl = prediction.image_url;
 
   return (
     <motion.div
@@ -42,12 +42,18 @@ export function PredictionCard({ prediction, index }: PredictionCardProps) {
           </div>
 
           <div className="relative mb-4 aspect-[4/3] w-full overflow-hidden rounded-2xl bg-surface-raised border border-leaf/10">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageUrl}
-              alt={prediction.predicted_label}
-              className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
-            />
+            {imageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={imageUrl}
+                alt={prediction.predicted_label}
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-xs text-text/60">
+                Image unavailable
+              </div>
+            )}
             <div className="absolute bottom-2.5 left-2.5 rounded-full bg-surface-raised/95 px-2.5 py-1 text-xs font-typewriter text-text shadow-sm">
               {formatPercent(prediction.confidence)}
             </div>

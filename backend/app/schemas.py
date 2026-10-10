@@ -1,6 +1,7 @@
 """
 Pydantic request/response models matching the API contract in
-PROJECT_CONTEXT.md section 6. No user_id field yet - that arrives in Phase 7.
+PROJECT_CONTEXT.md section 6. user_id is never exposed in responses
+(Phase 7: every route is already scoped to the signed-in user).
 """
 from datetime import datetime
 from typing import List, Optional
@@ -31,14 +32,13 @@ class DiseaseInfoResponse(BaseModel):
     prevention: str
 
 
-
 class PredictResponse(BaseModel):
     id: str
     label: str
     confidence: float
     top3: List[Top3Item]
     is_uncertain: bool
-    image_url: str
+    image_url: str  # signed URL, expires after 1 hour (Phase 7)
     model_version: str
     # Phase 5: null when the prediction is uncertain, or when Gemini/cache
     # lookup is unavailable. Never present on PredictionRecord.
@@ -48,6 +48,9 @@ class PredictResponse(BaseModel):
 class PredictionRecord(BaseModel):
     id: str
     image_path: str
+    # Phase 7: signed URL built by the backend (bucket is private). null only
+    # if signing failed for that image.
+    image_url: Optional[str] = None
     predicted_label: str
     confidence: float
     top3: List[Top3Item]
@@ -76,8 +79,8 @@ class DiseaseCount(BaseModel):
 
 
 class StatsResponse(BaseModel):
-    """Response model for GET /stats (Phase 6). Plain counts; the frontend
-    works out the percentages."""
+    """Response model for GET /stats (Phase 6). Plain counts for the signed-in
+    user; the frontend works out the percentages."""
     total_scans: int
     uncertain_scans: int
     feedback_yes: int

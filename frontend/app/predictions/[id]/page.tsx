@@ -12,7 +12,6 @@ import {
   PredictionRecord,
   sendFeedback,
 } from "@/lib/api";
-import { buildImageUrl } from "@/lib/storage";
 import { formatLabel, formatPercent } from "@/lib/format";
 import { ConfidenceBar } from "@/components/ConfidenceBar";
 import { AdviceTabs } from "@/components/AdviceTabs";
@@ -120,7 +119,8 @@ export default function PredictionDetailPage() {
 
   if (!prediction) return null;
 
-  const imageUrl = buildImageUrl(prediction.image_path);
+  // Signed URL from the backend (private bucket, Phase 7).
+  const imageUrl = prediction.image_url;
 
   return (
     <div className="relative w-full flex-1">
@@ -183,21 +183,27 @@ export default function PredictionDetailPage() {
           {/* Left Column: Specimen Image Viewport */}
           <div className="lg:col-span-7 flex flex-col rounded-3xl border border-leaf/15 bg-surface-raised p-4">
             <div className="aspect-[4/3] w-full overflow-hidden rounded-2xl bg-background relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <motion.img
-                src={imageUrl}
-                alt={prediction.predicted_label}
-                initial={{ scale: 0.94, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 0.4, ease: "easeOut" }}
-                className="h-full w-full object-cover"
-              />
+              {imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <motion.img
+                  src={imageUrl}
+                  alt={prediction.predicted_label}
+                  initial={{ scale: 0.94, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.4, ease: "easeOut" }}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-sm text-text/60">
+                  Image unavailable
+                </div>
+              )}
             </div>
           </div>
 
           {/* Right Column: Lilac Assessment Card & Diagnostics */}
           <div className="lg:col-span-5 flex flex-col gap-6 rounded-3xl border border-leaf/15 bg-card/60 p-6 sm:p-8">
-            {/* Neural Confidence Gauge */}
+            {/* Confidence Gauge */}
             <div>
               <div className="flex items-baseline justify-between mb-2">
                 <span className="text-xs text-text/60 font-medium">
@@ -237,7 +243,7 @@ export default function PredictionDetailPage() {
               </div>
             )}
 
-            {/* Field Verification / Feedback Box */}
+            {/* Feedback Box */}
             <div className="rounded-2xl border border-leaf/15 bg-surface-raised/80 p-4 text-left">
               <p className="text-xs text-text/60 font-medium mb-3">
                 Was this correct?

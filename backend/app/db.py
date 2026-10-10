@@ -1,10 +1,15 @@
 """
-Supabase access layer: image upload to the `plant-images` bucket, CRUD on
-the `predictions` table, and get/upsert on the `disease_info` advice cache
+Supabase access layer: image upload to the private `plant-images` bucket, CRUD
+on the `predictions` table, and get/upsert on the `disease_info` advice cache
 (schema in PROJECT_CONTEXT.md section 7).
 
-Uses the service-role key server-side only. RLS is off until Phase 7, so
-there is no user_id scoping here yet - every row is currently global.
+Uses the service-role key server-side only. The service-role key BYPASSES RLS,
+so since Phase 7 every predictions query here is scoped by `user_id` (the id
+from the verified token, see app/auth.py). Never add a predictions query
+without a user_id filter. disease_info stays global.
+
+Images live at `<user_id>/<uuid>.<ext>` in a private bucket and are returned
+to the frontend as short-lived signed URLs.
 
 NETWORKING WORKAROUND (see PROJECT_CONTEXT.md section 8/9):
 This machine's network resolves the Supabase host to two IPv6 addresses in
@@ -39,6 +44,8 @@ def _ipv4_only_getaddrinfo(*args, **kwargs):
 socket.getaddrinfo = _ipv4_only_getaddrinfo
 # --- end workaround ---
 
+SIGNED_URL_TTL_SECONDS = 3600  # signed image URLs expire after 1 hour
+
 _client: Optional[Client] = None
 
 
@@ -49,75 +56,147 @@ def get_client() -> Client:
     return _client
 
 
-def upload_image(file_bytes: bytes, content_type: str) -> str:
-    """Upload one prediction image to the public `plant-images` bucket and
-    return its storage path, stored as predictions.image_path."""
-    client = get_client()
-    ext = "jpg" if content_type == "image/jpeg" else content_type.split("/")[-1]
-    path = f"{uuid.uuid4()}.{ext}"
+def _bucket():
+    return get_client().storage.from_(settings.SUPABASE_STORAGE_BUCKET)
 
-    client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).upload(
-        path, file_bytes, {"content-type": content_type}
-    )
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+# --- storage: private bucket + signed URLs ---
+
+def upload_image(user_id: str, file_bytes: bytes, content_type: str) -> str:
+    """Upload one prediction image to `<user_id>/<uuid>.<ext>` in the private
+    `plant-images` bucket and return that path (stored as predictions.image_path).
+    The user-id folder is what the storage policies from Phase 7 match on."""
+    ext = "jpg" if content_type == "image/jpeg" else content_type.split("/")[-1]
+    path = f"{user_id}/{uuid.uuid4()}.{ext}"
+    _bucket().upload(path, file_bytes, {"content-type": content_type})
     return path
 
 
-def get_public_url(image_path: str) -> str:
-    client = get_client()
-    return client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).get_public_url(image_path)
+def _extract_signed(item) -> Optional[str]:
+    """Pull the URL out of a storage response item. Different supabase-py
+    versions name the key `signedURL` or `signedUrl`, and may return a path
+    relative to /storage/v1 instead of a full URL."""
+    if not isinstance(item, dict):
+        return None
+    url = item.get("signedURL") or item.get("signedUrl") or item.get("signed_url")
+    if not url:
+        return None
+    if url.startswith("http"):
+        return url
+    base = settings.SUPABASE_URL.rstrip("/") + "/storage/v1"
+    return base + (url if url.startswith("/") else "/" + url)
 
 
-def insert_prediction(record: dict) -> dict:
+def create_signed_url(image_path: str) -> Optional[str]:
+    """Signed URL for one image, or None if signing fails (the caller still
+    returns the record; the image just won't load)."""
+    try:
+        return _extract_signed(_bucket().create_signed_url(image_path, SIGNED_URL_TTL_SECONDS))
+    except Exception as exc:
+        print(f"[STORAGE] could not sign {image_path!r}: {exc}")
+        return None
+
+
+def attach_image_urls(rows: list[dict]) -> list[dict]:
+    """Add a signed `image_url` to each prediction row, using one batch call.
+    Rows whose URL can't be created get image_url = None."""
+    if not rows:
+        return rows
+    paths = [r["image_path"] for r in rows]
+    mapping: dict[str, str] = {}
+    try:
+        items = _bucket().create_signed_urls(paths, SIGNED_URL_TTL_SECONDS)
+        for item in items or []:
+            url = _extract_signed(item)
+            if url and isinstance(item, dict) and item.get("path"):
+                mapping[item["path"]] = url
+    except Exception as exc:
+        print(f"[STORAGE] batch signing failed: {exc}")
+    for r in rows:
+        r["image_url"] = mapping.get(r["image_path"])
+    return rows
+
+
+# --- predictions (always scoped by user_id) ---
+
+def insert_prediction(user_id: str, record: dict) -> dict:
     client = get_client()
-    result = client.table("predictions").insert(record).execute()
+    result = client.table("predictions").insert({**record, "user_id": user_id}).execute()
     return result.data[0]
 
 
-def list_predictions(page: int, page_size: int, label: Optional[str]) -> tuple[list[dict], int]:
+def list_predictions(
+    user_id: str, page: int, page_size: int, label: Optional[str]
+) -> tuple[list[dict], int]:
     """Paginated, optionally filtered by predicted_label, newest first -
     backed by the created_at/predicted_label indexes added in Phase 2."""
     client = get_client()
-    query = client.table("predictions").select("*", count="exact")
+    query = client.table("predictions").select("*", count="exact").eq("user_id", user_id)
     if label:
         query = query.eq("predicted_label", label)
 
     start = (page - 1) * page_size
     end = start + page_size - 1
     result = query.order("created_at", desc=True).range(start, end).execute()
-    return result.data, result.count or 0
+    return attach_image_urls(result.data), result.count or 0
 
 
-def get_prediction(prediction_id: str) -> Optional[dict]:
+def get_prediction(user_id: str, prediction_id: str) -> Optional[dict]:
+    """None if the id is malformed, doesn't exist, or belongs to another user."""
+    if not _is_uuid(prediction_id):
+        return None
     client = get_client()
-    result = client.table("predictions").select("*").eq("id", prediction_id).execute()
-    return result.data[0] if result.data else None
+    result = (
+        client.table("predictions")
+        .select("*")
+        .eq("id", prediction_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not result.data:
+        return None
+    return attach_image_urls(result.data)[0]
 
 
-def delete_prediction(prediction_id: str) -> bool:
+def delete_prediction(user_id: str, prediction_id: str) -> bool:
     """Delete both the DB row and its storage object. Returns False if the
-    row didn't exist so the route can return a 404 instead of a false 204."""
-    client = get_client()
-    row = get_prediction(prediction_id)
+    row didn't exist (or isn't this user's) so the route returns a 404."""
+    row = get_prediction(user_id, prediction_id)
     if row is None:
         return False
 
-    client.storage.from_(settings.SUPABASE_STORAGE_BUCKET).remove([row["image_path"]])
-    client.table("predictions").delete().eq("id", prediction_id).execute()
+    _bucket().remove([row["image_path"]])
+    get_client().table("predictions").delete().eq("id", prediction_id).eq("user_id", user_id).execute()
     return True
 
 
-def update_feedback(prediction_id: str, correct: bool, corrected_label: Optional[str]) -> Optional[dict]:
+def update_feedback(
+    user_id: str, prediction_id: str, correct: bool, corrected_label: Optional[str]
+) -> Optional[dict]:
+    if not _is_uuid(prediction_id):
+        return None
     client = get_client()
     result = (
         client.table("predictions")
         .update({"feedback_correct": correct, "corrected_label": corrected_label})
         .eq("id", prediction_id)
+        .eq("user_id", user_id)
         .execute()
     )
-    return result.data[0] if result.data else None
+    if not result.data:
+        return None
+    return attach_image_urls(result.data)[0]
 
 
-# --- disease_info: cache for Gemini-generated advice (Phase 5) ---
+# --- disease_info: global cache for Gemini-generated advice (Phase 5) ---
 
 def get_disease_info(label: str) -> Optional[dict]:
     """Return the cached disease_info row for this exact label string
@@ -146,21 +225,26 @@ def upsert_disease_info(label: str, advice: dict) -> None:
     ).execute()
 
 
-# --- stats: read-only counts over `predictions` (Phase 6) ---
+# --- stats: read-only counts over one user's `predictions` (Phase 6, per-user since Phase 7) ---
 
 def _count(query) -> int:
     return query.execute().count or 0
 
 
-def get_stats(top_n: int = 5) -> dict:
-    """Counts for the stats page. Uncertain scans are left out of the top-diseases
-    list because their top label is probably wrong (section 8). The top-diseases
-    tally pages through the table 1000 rows at a time because PostgREST has no
-    GROUP BY; fine for a personal-scale table."""
+def get_stats(user_id: str, top_n: int = 5) -> dict:
+    """Counts for the stats page, for this user only. Uncertain scans are left
+    out of the top-diseases list because their top label is probably wrong
+    (section 8). The tally pages through the table 1000 rows at a time because
+    PostgREST has no GROUP BY; fine for a personal-scale table."""
     client = get_client()
 
     def base():
-        return client.table("predictions").select("id", count="exact").limit(1)
+        return (
+            client.table("predictions")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .limit(1)
+        )
 
     total = _count(base())
     uncertain = _count(base().eq("is_uncertain", True))
@@ -174,6 +258,7 @@ def get_stats(top_n: int = 5) -> dict:
         rows = (
             client.table("predictions")
             .select("predicted_label")
+            .eq("user_id", user_id)
             .eq("is_uncertain", False)
             .order("id")
             .range(start, start + page_size - 1)

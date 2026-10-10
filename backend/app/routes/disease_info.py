@@ -3,11 +3,13 @@
 Read-only. Returns the cached advice row from `disease_info` (Phase 5 cache).
 Never calls Gemini and never writes to the database. A row counts as a hit
 only if all four text fields are non-empty (PROJECT_CONTEXT.md section 8).
+Global data (not per-user), but requires login since Phase 7.
 Plain `def`, not `async def`, because the Supabase client is synchronous.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from app import db
+from app.auth import get_current_user
 from app.schemas import DiseaseInfoResponse
 
 router = APIRouter()
@@ -15,7 +17,11 @@ router = APIRouter()
 _FIELDS = ("summary", "symptoms", "treatment", "prevention")
 
 
-@router.get("/disease-info/{label}", response_model=DiseaseInfoResponse)
+@router.get(
+    "/disease-info/{label}",
+    response_model=DiseaseInfoResponse,
+    dependencies=[Depends(get_current_user)],
+)
 def get_disease_info(label: str) -> DiseaseInfoResponse:
     # `label` arrives URL-decoded, so raw PlantVillage strings with commas,
     # parentheses and spaces match labels.json exactly.

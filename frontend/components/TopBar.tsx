@@ -2,9 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/AuthProvider";
 
 export function TopBar() {
   const pathname = usePathname();
+  const { signOut } = useAuth();
+
+  // No navigation on the login screen.
+  if (pathname === "/login") return null;
+
   const isClassify = pathname === "/";
   const isHistory = pathname === "/history" || pathname.startsWith("/predictions");
   const isStats = pathname === "/stats";
@@ -51,6 +57,13 @@ export function TopBar() {
           >
             Stats
           </Link>
+          <button
+            type="button"
+            onClick={() => signOut()}
+            className="py-1 text-text/70 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leaf focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded"
+          >
+            Sign out
+          </button>
         </nav>
       </div>
     </header>

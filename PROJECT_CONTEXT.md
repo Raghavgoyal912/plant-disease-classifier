@@ -13,30 +13,35 @@ PatraVyadhi (the app's name since Phase 6b; the project was previously called "P
 | Model | MobileNetV2 transfer learning on PlantVillage, exported to ONNX, served with ONNX Runtime |
 | AI assist | Google AI Studio / Gemini API (advice + leaf pre-check) |
 | Database | Supabase (Postgres + Storage) |
-| Auth | Supabase Auth (email OTP + Google), added in Phase 7 |
+| Auth | Supabase Auth (email OTP via Brevo SMTP + Google), done in Phase 7. Backend verifies the ES256 access token against the project's JWKS. |
 | Observability | Highlight.io (Phase 8) |
 | Deploy | Vercel (frontend), Render/Railway (API), Supabase (DB), added in Phase 8 |
 
 ## 2b. Architecture
 
+```
 Browser (Next.js + Tailwind, localhost:3000)
+   |  every call carries Authorization: Bearer <Supabase access token>
    |  POST /predict (multipart image)
    v
 FastAPI (localhost:8000)
+   |-- 0. [Phase 7] verify token (app/auth.py, JWKS, ES256) -> user_id, else 401
    |-- 1. validate image (type, size)
    |-- 2. [Phase 5] Gemini leaf pre-check -> reject if not a leaf
    |-- 3. preprocess (see ml/export/preprocessing.json) and run ONNX model
    |-- 4. top-3 + confidence; is_uncertain if top confidence < threshold
-   |-- 5. upload image to Supabase Storage, insert row in predictions
+   |-- 5. upload image to private Storage at <user_id>/<uuid>.<ext>, insert row in predictions with user_id
    |-- 6. [Phase 5] fetch/generate advice from disease_info (cached; Gemini only on cache miss)
    v
-Response JSON -> result card. History page reads via GET /predictions. Detail page reads GET /predictions/{id}, plus GET /disease-info/{label} (cache lookup only, no Gemini) for confident scans. Stats page reads GET /stats (counts only).
+Response JSON -> result card.
+```
+History page reads via GET /predictions (this user's rows only, signed image_url). Detail page reads GET /predictions/{id}, plus GET /disease-info/{label} (cache lookup only, no Gemini) for confident scans. Stats page reads GET /stats (this user's counts only).
 
 ### Who does what
 - Stitch: designs the 3 screens (Classify, History, Detail), exports React/Tailwind code. For Phase 6b it was used for a motion-forward, low-graphics, nature-themed direction and generated the small decoration images (leaf, droplet, seed). Its animation output is concept/static only; the real animation (Framer Motion) is built in Antigravity. Spline was considered and dropped (section 8).
 - Antigravity IDE: moves screens into Next.js and wires them to the API. For Phase 6b, also implements real animations (Framer Motion / motion/react) on top of Stitch's motion-forward designs.
 - Google AI Studio: prototype and test Gemini prompts (advice, leaf check) before they go in the backend.
-- Supabase: Postgres for predictions and disease_info, Storage for images. Auth and RLS come in Phase 7.
+- Supabase: Postgres for predictions and disease_info, private Storage for images, Auth (email OTP + Google) and RLS (Phase 7).
 - ONNX Runtime: the only thing that classifies. Gemini never classifies.
 - AI chat assistant: writes backend and ML code from this file.
 - Highlight.io: errors and session replay, Phase 8 only.
@@ -47,16 +52,19 @@ Response JSON -> result card. History page reads via GET /predictions. Detail pa
 
 **Note (Phase 6b deviations, see section 8):** Phase 6b followed the Stitch → Antigravity pipeline. Two small deviations happened because Antigravity's usage quota ran out mid-task: the backend route `app/routes/disease_info.py` was supplied by the AI chat assistant (backend code is its job anyway), and `components/AdviceTabs.tsx` was rewritten twice in chat (tab-wrap fix, then the slider version). Section 3's rule still applies: ask before substituting hand-written screens for the pipeline.
 
+**Note (Phase 7 deviations, see section 8):** the login screen, `AuthProvider`, `lib/supabase.ts` and the auth edits to `lib/api.ts`, `TopBar.tsx`, `layout.tsx`, `PredictionCard.tsx` and the Detail page were written by the AI chat assistant, not Stitch → Antigravity, because Antigravity's quota was exhausted until 2026-10-14. The user approved this.
+
 ## 3. Constraints and working rules
 - No Claude Code. Backend is written with an AI chat assistant and refined in Antigravity.
-- Auth, Highlight.io and deployment are LAST. Until Phase 7 there is no login and RLS is off.
-- `user_id` is nullable until Phase 7.
+- Highlight.io and deployment are LAST (Phase 8). Auth and RLS exist since Phase 7: every route except `/health` requires login.
+- `user_id` is NOT NULL (FK to `auth.users`) since Phase 7.
 - Everything runs locally first: frontend `localhost:3000`, backend `localhost:8000`.
 - Secrets live only in `.env` files (never committed). Supabase service-role key and Gemini key are server-side only.
 - Commit to Git after every working step.
-- **How to run locally (Windows/PowerShell, project at `D:\Project`):** two terminals. Backend: `cd backend`, activate the venv (`.\venv\Scripts\Activate.ps1`), `pip install -r requirements.txt` (only after requirements change), then `uvicorn app.main:app --reload --port 8000`. Frontend: `cd frontend`, `npm run dev`. Check the backend at `http://localhost:8000/docs`, the app at `http://localhost:3000`. If `pip.exe` is blocked by an Application Control policy, use `python -m pip install -r requirements.txt` instead. `--reload` does NOT pick up `.env` changes — Ctrl+C and restart after editing `.env`. When replacing project files, verify with e.g. `Select-String -Path app\config.py -Pattern "GEMINI"` that the new version actually landed (a failed overwrite once left the old Phase 4 code running with no error).
+- **How to run locally (Windows/PowerShell, project at `D:\Project`):** two terminals. Backend: `cd backend`, activate the venv (`.\venv\Scripts\Activate.ps1`), `pip install -r requirements.txt` (only after requirements change), then `uvicorn app.main:app --reload --port 8000`. Frontend: `cd frontend`, `npm run dev`. Check the backend at `http://localhost:8000/docs`, the app at `http://localhost:3000`. If `pip.exe` is blocked by an Application Control policy, use `python -m pip install -r requirements.txt` instead. `--reload` does NOT pick up `.env` changes — Ctrl+C and restart after editing `.env`. When replacing project files, verify with e.g. `Select-String -Path app\config.py -Pattern "GEMINI"` that the new version actually landed (a failed overwrite once left the old Phase 4 code running with no error). The frontend needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (public key only) in `frontend/.env.local`; restart `npm run dev` after editing. The backend needs no new env vars. Tailwind must stay on v3 (`tailwindcss@3`); v4 breaks `postcss.config.mjs`.
 - Whenever PROJECT_CONTEXT.md is updated (end of a phase, a bug fix, a decision change), review every section for what needs to change — not just section 4 (status). At minimum check: section 4 (roadmap/status), section 5 (folder structure, if new files were added), section 6 (API contract, if it changed), section 7 (schema, if it changed), section 8 (key decisions, if a new one was made or an assumption was corrected), section 9 (known issues, if one was found or resolved), and section 10 (fill in the phase-prompt template with that phase's actual outcome). Tell the user exactly which sections changed and give the full updated text for each.
 - **Before generating or wiring any frontend screen, check section 2b's "who does what" and follow it — don't substitute hand-written screens for the Stitch → Antigravity pipeline without asking first.** (Added after Phase 4 deviated from this once.)
+- **The backend uses the service-role key, which bypasses RLS. Every `predictions` query in `db.py` must filter by `user_id`.** RLS is a safety net, not the protection.
 
 ## 4. Roadmap and current status
 - [x] Phase 0: Project setup
@@ -66,16 +74,16 @@ Response JSON -> result card. History page reads via GET /predictions. Detail pa
 - [x] Phase 4: Frontend (Stitch screens, Antigravity wiring) — functional wiring complete, both open bugs resolved (see section 9). Visual design intentionally left as the hand-built stopgap (section 8); real redesign deferred to Phase 6b.
 - [x] Phase 5: Gemini features (advice + leaf pre-check) — done 2026-10-02. Leaf pre-check prompt tested in Google AI Studio (leaf → true, non-leaf → false) and confirmed working in the app; advice shows in the result card and is cached in `disease_info`. Model: `gemini-3.1-flash-lite`.
 - [-] Phase 5b (retrain on real-world data): considered and DROPPED 2026-10-02 by the user. The project stays on the PlantVillage-only model `mnv2-plantvillage-v1`; no retraining is planned.
-- [x] Phase 6: Polish — done 2026-10-10. Added a leaf logo (browser-tab icon, iPhone icon, top-bar logo). Tab title edited in layout.tsx. No API or backend changes. Low-confidence UX (photo tips, supported-crops line, better "We're not sure" card), minimal-text cleanup of all screens, stats page (`GET /stats`), evaluation write-up (`docs/EVALUATION.md`), and a type-ahead disease filter on History. The feedback control already existed since Phase 4 and was only restyled in 6b. Details in section 8.
-- [x] Phase 6b: Motion frontend redesign — done 2026-10-07. The app is now named PatraVyadhi. Classify, History and Detail were rebuilt from the Stitch designs (light-green, nature-themed, poster-like, low-graphics) with Framer Motion animations; the Detail screen now shows cached advice via the new `GET /disease-info/{label}` (section 6). Details and deviations in section 8.
-- [ ] Phase 7: Auth (Supabase Auth, JWT check in FastAPI, RLS)   <- NEXT
-- [ ] Phase 8: Ship (Highlight.io, Docker, deploy, README)
+- [x] Phase 6: Polish — done 2026-10-10. Leaf logo, low-confidence UX (photo tips, supported-crops line), minimal-text cleanup, stats page (`GET /stats`), evaluation write-up (`docs/EVALUATION.md`), type-ahead disease filter on History. Details in section 8.
+- [x] Phase 6b: Motion frontend redesign — done 2026-10-07. The app is named PatraVyadhi. Classify, History and Detail rebuilt from Stitch designs with Framer Motion; Detail shows cached advice via `GET /disease-info/{label}`. Details in section 8.
+- [x] Phase 7: Auth — done 2026-10-10. Supabase Auth (email code via Brevo SMTP, and Google), ES256 JWT check in FastAPI (`app/auth.py`), `user_id` NOT NULL + FK, RLS on `predictions`, `disease_info` and the `plant-images` bucket, private bucket with signed image URLs, per-user History and Stats, login screen and session handling in the frontend. Details in section 8.
+- [ ] Phase 8: Ship (Highlight.io, Docker, deploy, README)   <- NEXT
 
-**Currently working on:** nothing in progress. Phase 6 is signed off; the next phase is Phase 7 (Auth). The user will give the specific Phase 7 instructions in the next session.
+**Currently working on:** nothing in progress. Phase 7 is signed off; the next phase is Phase 8 (Ship). The user will give the specific Phase 8 instructions in the next session.
 
-**Last thing that worked:** Phase 6 sign-off (2026-10-10): the user confirmed the photo tips, text cleanup, `/stats` page and the redesigned screens work. The History filter was rebuilt as a type-ahead dropdown (typing "p" lists Peach, Pepper, Potato first; choosing a name sends the exact label); its matching logic was run against the real `labels.json` and the code type-checked, but the user ran the final browser test themselves.
+**Last thing that worked:** Phase 7 sign-off (2026-10-10): the user confirmed sign-in with Google and with the emailed code, Classify, History and Detail images (signed URLs), per-user Stats and Sign out all work. Opening `GET /stats` without a token returns 401 "Missing access token."
 
-**Current problem(s):** none blocking. Known accepted limitations: real-world phone photos are less reliable than lab-style ones (section 9, first bullet); Detail shows advice only for labels already in the `disease_info` cache (section 9); the History filter picks one disease, not a whole crop (section 9).
+**Current problem(s):** none blocking. Known accepted limitations: real-world phone photos are less reliable than lab-style ones (section 9, first bullet); Detail shows advice only for labels already in the `disease_info` cache; the History filter picks one disease, not a whole crop; the email sender is a personal Gmail address behind Brevo (set up a proper domain sender in Phase 8); Google sign-in is in "Testing" mode (publish in Phase 8); signed image URLs expire after 1 hour (section 9).
 
 ## 5. Folder structure
 ```
@@ -86,50 +94,55 @@ project/
 - ml/          train.ipynb, evaluation/ (metrics.json, confusion_matrix.png, classification_report.txt, training_curves.png), export/ (model.onnx, labels.json, preprocessing.json)
 - backend/     FastAPI app
                app/main.py, app/config.py, app/model.py, app/db.py, app/schemas.py
+               app/auth.py          (Phase 7: verifies the Supabase ES256 access token via JWKS; FastAPI dependency `get_current_user` returns the user id)
                app/gemini.py        (Phase 5: leaf pre-check + advice generation, the only file that calls Gemini)
                app/routes/predict.py, app/routes/predictions.py
-               app/routes/disease_info.py      (Phase 6b: GET /disease-info/{label}, read-only cache lookup, no Gemini)
-               app/routes/stats.py             (Phase 6: GET /stats, read-only counts; uses db.get_stats)
+               app/routes/disease_info.py      (GET /disease-info/{label}, read-only cache lookup, no Gemini, login required)
+               app/routes/stats.py             (GET /stats, read-only counts for the signed-in user; uses db.get_stats)
                app/__init__.py, app/routes/__init__.py
-               requirements.txt (now includes google-genai), .env.example (real .env is gitignored; Phase 5 adds GEMINI_API_KEY, GEMINI_MODEL, optional GEMINI_TIMEOUT_SECONDS)
+               requirements.txt (includes google-genai and PyJWT[crypto]), .env.example (real .env is gitignored; GEMINI_API_KEY, GEMINI_MODEL, optional GEMINI_TIMEOUT_SECONDS)
 - frontend/    Next.js app
-               package.json, next.config.mjs, tailwind.config.ts, postcss.config.mjs, tsconfig.json
-               .env.local.example (real .env.local is gitignored), .gitignore
+               package.json (includes @supabase/supabase-js; tailwindcss pinned to v3), next.config.mjs, tailwind.config.ts, postcss.config.mjs, tsconfig.json
+               .env.local.example (NEXT_PUBLIC_API_BASE_URL, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY; real .env.local is gitignored), .gitignore
                app/layout.tsx, app/globals.css
                app/page.tsx                    (Classify screen)
+               app/login/page.tsx              (Phase 7: email code + Google sign-in)
                app/history/page.tsx            (History screen)
                app/predictions/[id]/page.tsx   (Detail screen)
-               app/icon.svg          
-               app/apple-icon.png    
-               lib/api.ts       (typed fetch client — PredictResponse vs PredictionRecord, see section 6)
+               app/stats/page.tsx              (Stats screen)
+               app/icon.svg
+               app/apple-icon.png
+               lib/api.ts       (typed fetch client; every call goes through apiFetch(), which attaches the Bearer token and signs out on 401; PredictResponse vs PredictionRecord, see section 6)
+               lib/supabase.ts  (Phase 7: browser Supabase client with the public key, plus getAccessToken())
                lib/format.ts    (label/percent formatting, null-safe)
-               lib/storage.ts   (builds a public image URL from image_path)
-               app/stats/page.tsx              (Phase 6: Stats screen)
-               lib/labels.ts    (Phase 6: copy of ml/export/labels.json as `LABELS` plus `matchLabels()` for the History filter; regenerate if the model's classes change)
-               components/      (small shared components: ConfidenceBar, AdviceTabs, PredictionCard, TopBar, StatTile, LabelCombobox, Decor, AnalyzingLine, MotionProvider — see frontend/components/)
+               lib/labels.ts    (copy of ml/export/labels.json as `LABELS` plus `matchLabels()` for the History filter; regenerate if the model's classes change)
+               components/      (ConfidenceBar, AdviceTabs, PredictionCard, TopBar, StatTile, LabelCombobox, Decor, AnalyzingLine, MotionProvider, AuthProvider — see frontend/components/)
                public/logo.svg
                public/decor/    (leaf.png, droplet.png, seed.png: transparent decoration images; seed.png is currently unused)
-- docs/        ai-design.md (prompt and decision log), EVALUATION.md (Phase 6: model evaluation write-up)
+- docs/        ai-design.md (prompt and decision log), EVALUATION.md (model evaluation write-up)
 ```
-Note: root folder is named `project/` (not `plant-disease-classifier/` as originally planned).
+Note: root folder is named `project/` (not `plant-disease-classifier/` as originally planned). `frontend/lib/storage.ts` was removed in Phase 7 (images now come as signed URLs from the backend). If it is still in your folder, delete it.
 
-## 6. API contract (confirmed against real backend code, 2026-09-26; Phase 5 additions 2026-10-01; Phase 6b addition 2026-10-07; Phase 6 addition 2026-10-10)
+## 6. API contract (confirmed against real backend code, 2026-09-26; Phase 5 additions 2026-10-01; Phase 6b addition 2026-10-07; Phase 6 addition 2026-10-10; Phase 7 changes 2026-10-10)
 `POST /predict`'s response and the list/detail/feedback responses are **two different shapes** — this wasn't spelled out clearly before and caused a real bug, so it's explicit now.
+
+**Authentication (Phase 7).** Every route except `GET /health` requires the header `Authorization: Bearer <Supabase access token>`. A missing, malformed, expired or invalid token returns `401` with a plain string `detail` ("Missing access token.", "Access token expired." or "Invalid access token.") and a `WWW-Authenticate: Bearer` header. The frontend's `apiFetch()` (lib/api.ts) attaches the token and signs the user out on a 401. All data is scoped to the signed-in user (the token's `sub`): another user's prediction id returns `404`, never `403`. `user_id` is never included in any response.
 
 - `POST /predict` : multipart form, field `file` (image). Returns `PredictResponse`:
   ```
   { id, label, confidence, top3: [{label, confidence}], is_uncertain, image_url, model_version, advice? }
   ```
-  `image_url` here is already a full public URL (built server-side via `db.get_public_url`).
+  `image_url` is a signed URL (private bucket) that expires after 1 hour.
 
   `advice` (Phase 5) is either `null` or an object `{ summary, symptoms, treatment, prevention }` (all strings; same four text columns as `disease_info`). It is `null` when `is_uncertain` is true (the top label is probably wrong, so advice for it would mislead) or when Gemini / the cache lookup is unavailable. Advice is generated from the predicted label only, never from the image.
 
   **Error responses from `POST /predict`:**
-  - `400` unsupported file type, `413` file too large, `500` inference failed — unchanged, `detail` is a plain string.
+  - `401` (Phase 7) missing/invalid/expired token. Checked first, before any Gemini call, upload or database write.
+  - `400` unsupported file type, `413` file too large, `500` inference failed (or the image URL could not be created) — `detail` is a plain string.
   - `422` (Phase 5) Gemini says the image isn't a leaf: `{ "detail": { "code": "not_a_leaf", "message": "<user-facing text>" } }`. Nothing is run through ONNX, uploaded to Storage, or saved to `predictions`. This is the only error whose `detail` is an object rather than a string; the frontend's `ApiError` (lib/api.ts) handles both.
   - If the Gemini leaf check can't run (no key, timeout, quota, bad response), the request is NOT rejected — the check fails open and classification continues.
 
-- `GET /predictions?page=&page_size=&label=` : returns `PaginatedPredictions`:
+- `GET /predictions?page=&page_size=&label=` : returns `PaginatedPredictions` (only the signed-in user's rows):
   ```
   { items: PredictionRecord[], page, page_size, total }
   ```
@@ -138,25 +151,27 @@ Note: root folder is named `project/` (not `plant-disease-classifier/` as origin
 
 - `PredictionRecord` shape (used by both endpoints above, and returned by feedback below):
   ```
-  { id, image_path, predicted_label, confidence, top3: [{label, confidence}],
+  { id, image_path, image_url?, predicted_label, confidence, top3: [{label, confidence}],
     is_uncertain, model_version, feedback_correct?, corrected_label?, created_at }
   ```
-  Note the different field names vs. `PredictResponse`: `predicted_label` (not `label`), `image_path` — a raw Supabase Storage path, not a URL (not `image_url`). No `advice` field at all on this shape (advice is only returned by `POST /predict`; the Detail screen gets it separately from `GET /disease-info/{label}` below). The frontend must build the public URL itself from `image_path` (see `lib/storage.ts` / section 8).
+  Note the different field names vs. `PredictResponse`: `predicted_label` (not `label`). `image_path` is the raw Storage path (`<user_id>/<uuid>.<ext>`) and is no longer used to build URLs. **Phase 7:** `image_url` is a signed URL built by the backend (expires after 1 hour; `null` only if signing failed for that image, in which case the UI shows "Image unavailable"). No `advice` field on this shape (the Detail screen gets it from `GET /disease-info/{label}`).
 
-- `DELETE /predictions/{id}` : `204 No Content`, empty body.
+- `DELETE /predictions/{id}` : `204 No Content`, empty body. Deletes the row and its Storage object. `404` if the id isn't the user's.
 
-- `POST /predictions/{id}/feedback` : body `{ correct: bool, corrected_label? }`. Returns the updated `PredictionRecord`.
+- `POST /predictions/{id}/feedback` : body `{ correct: bool, corrected_label? }`. Returns the updated `PredictionRecord` (with `image_url`).
 
-- `GET /disease-info/{label}` (Phase 6b, 2026-10-07): `label` is the exact `labels.json` string, URL-encoded by the client (`getDiseaseInfo()` in `lib/api.ts` uses `encodeURIComponent`). Returns `DiseaseInfoResponse`: `{ summary, symptoms, treatment, prevention }` (all strings), read from the `disease_info` cache. Read-only: it never calls Gemini and never writes. Returns `404` with a plain string `detail` ("No advice cached for this label.") when there is no row or any of the four fields is empty; `getDiseaseInfo()` turns that 404 into `null`. The Detail screen calls it only when the record's `is_uncertain` is false.
+- `GET /disease-info/{label}` (Phase 6b): `label` is the exact `labels.json` string, URL-encoded by the client (`getDiseaseInfo()` uses `encodeURIComponent`). Returns `DiseaseInfoResponse`: `{ summary, symptoms, treatment, prevention }` (all strings), read from the `disease_info` cache. Read-only: never calls Gemini, never writes. **Global data (not per-user), but requires login (Phase 7).** Returns `404` with a plain string `detail` ("No advice cached for this label.") when there is no row or any field is empty; `getDiseaseInfo()` turns that 404 into `null`. The Detail screen calls it only when `is_uncertain` is false.
 
-- `GET /stats` (Phase 6, 2026-10-10): no parameters. Returns `StatsResponse`: `{ total_scans, uncertain_scans, feedback_yes, feedback_no, top_diseases: [{label, count}] }` (all integers except `label`, a raw `labels.json` string). Read-only: counts rows in `predictions`, never calls Gemini, never writes. `top_diseases` is the 5 most frequent predicted labels among **confident** scans only (uncertain scans are excluded because their top label is probably wrong). The frontend computes the percentages (uncertain rate = `uncertain_scans / total_scans`; marked-correct rate = `feedback_yes / (feedback_yes + feedback_no)`, shown as "—" when no feedback exists).
+- `GET /stats` (Phase 6; **per-user since Phase 7**): no parameters. Returns `StatsResponse`: `{ total_scans, uncertain_scans, feedback_yes, feedback_no, top_diseases: [{label, count}] }` (all integers except `label`, a raw `labels.json` string), counting only the signed-in user's scans. Read-only: never calls Gemini, never writes. `top_diseases` is the 5 most frequent predicted labels among **confident** scans only (uncertain scans are excluded because their top label is probably wrong). The frontend computes the percentages (uncertain rate = `uncertain_scans / total_scans`; marked-correct rate = `feedback_yes / (feedback_yes + feedback_no)`, shown as "—" when no feedback exists).
+
+- `GET /health` : no auth. Returns `{ status, model_loaded }`.
 
 ## 7. Database schema (Supabase Postgres — confirmed matching live `db.py`/`schemas.py`)
 ```sql
 create table predictions (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid null,                     -- becomes NOT NULL + FK to auth.users in Phase 7
-  image_path text not null,
+  user_id uuid not null references auth.users (id) on delete cascade,   -- Phase 7
+  image_path text not null,              -- '<user_id>/<uuid>.<ext>' in the private bucket
   predicted_label text not null,
   confidence real not null,
   top3 jsonb not null,
@@ -166,6 +181,7 @@ create table predictions (
   corrected_label text,
   created_at timestamptz not null default now()
 );
+-- indexes: created_at (desc), predicted_label (Phase 2); (user_id, created_at desc) (Phase 7)
 
 create table disease_info (
   label text primary key,
@@ -174,7 +190,11 @@ create table disease_info (
   updated_at timestamptz default now()
 );
 ```
-Storage bucket: `plant-images` (public).
+**RLS (Phase 7), enabled on both tables:**
+- `predictions`: select / insert / update / delete for role `authenticated` only where `user_id = auth.uid()`. No `anon` access.
+- `disease_info`: select for `authenticated` (any logged-in user); no write policy, so only the backend (service-role key, which bypasses RLS) can write.
+
+**Storage:** bucket `plant-images` is **private** (Phase 7). Policies on `storage.objects` let `authenticated` users select / insert / delete only objects whose first folder equals their own `auth.uid()`. The backend uploads and signs URLs with the service-role key.
 
 ## 8. Key decisions
 - FastAPI (not Node) because the model is Python/ONNX.
@@ -188,12 +208,12 @@ Storage bucket: `plant-images` (public).
 - Labels are raw PlantVillage folder names; labels.json index order matches ONNX output index order. Several labels contain commas/parentheses/spaces (e.g. "Pepper,_bell___Bacterial_spot") - backend must URL-encode when used as a query param.
 - model_version = "mnv2-plantvillage-v1", stored in preprocessing.json and written to predictions.model_version on every insert.
 - Test accuracy 0.9948 / macro F1 0.9918 on 8,146 held-out PlantVillage images (see section 9 - this is a ceiling, not expected real-world accuracy).
-- `plant-images` storage bucket is public (not private + service-role reads) - no auth exists yet, so there's no user to scope access to; revisit alongside RLS in Phase 7.
+- `plant-images` was public through Phase 6 because no auth existed; **made private in Phase 7** (see the Phase 7 private-bucket bullet).
 - Added indexes on `predictions.created_at` (desc) and `predictions.predicted_label` to support the paginated/filtered `GET /predictions` contract in section 6.
 - **Root project folder is named `project/`, not `plant-disease-classifier/`** — section 5 corrected to match.
 - **All FastAPI route handlers in `routes/predict.py` and `routes/predictions.py` are plain `def`, not `async def`.** Every one of them calls synchronous Supabase-client or ONNX code; wrapping that in `async def` blocks FastAPI's single event loop for every other in-flight request. Plain `def` routes run in a threadpool automatically. This was a real bug (History would hang behind a slow Classify call) found and fixed after Phase 3 was initially marked done — see section 9.
-- **`GET /predictions` and `GET /predictions/{id}` return `image_path` (a raw Storage path), not a full URL** — only `POST /predict`'s response already includes one (built server-side via `db.get_public_url`). The frontend reconstructs the public URL itself via `lib/storage.ts`'s `buildImageUrl()`, which needs `NEXT_PUBLIC_SUPABASE_URL` set in `frontend/.env.local` to the real Supabase project URL. Confirmed working correctly on both History and Detail pages (section 9) — the earlier suspected bug did not reproduce once actually inspected.
-- **Phase 4's frontend was hand-built directly**, not via Stitch → Antigravity as section 2b describes, because the user chose to reuse an already-built implementation rather than repeat the design step. The wiring/logic files (`lib/api.ts`, `lib/format.ts`, `lib/storage.ts`) carried over into the Phase 6b redesign unchanged apart from one addition: `getDiseaseInfo()` in `lib/api.ts` (section 6).
+- **`GET /predictions` and `GET /predictions/{id}` originally returned only `image_path` (a raw Storage path) and the frontend built the public URL itself via `lib/storage.ts`. Superseded in Phase 7:** both endpoints now also return a backend-signed `image_url`, and the frontend no longer builds URLs itself (`lib/storage.ts` removed).
+- **Phase 4's frontend was hand-built directly**, not via Stitch → Antigravity as section 2b describes, because the user chose to reuse an already-built implementation rather than repeat the design step. The wiring/logic files (`lib/api.ts`, `lib/format.ts`, `lib/storage.ts`) carried over into the Phase 6b redesign unchanged apart from one addition: `getDiseaseInfo()` in `lib/api.ts` (section 6). (`lib/storage.ts` was later removed in Phase 7.)
 - **IPv4-only DNS resolution workaround, added in `db.py` (2026-09-27):** the dev machine's network resolves the Supabase host to two IPv6 addresses in the `64:ff9b::/96` NAT64-synthesized range, which aren't actually routable here. The OS tried those first on every new connection, hanging ~21s each (~43s total) before falling back to the real IPv4 address — this, not the ONNX model, was the entire cause of the 15+ second `/predict` latency (confirmed via a standalone socket-level diagnostic: forced-IPv4 connects in ~0.06s vs ~42s default). Fixed by monkey-patching `socket.getaddrinfo` in `db.py` to filter out non-IPv4 results at import time. Environment-specific — worth re-checking once deployed to Render/Railway in Phase 8 (harmless to leave in either way).
 - **Stitch's motion/animation capability is limited, confirmed via research (2026-09-27):** Stitch can generate motion-forward visual concepts and "kinetic UI," but does not produce production animation code — reviews are consistent that real interaction/animation implementation still needs a dedicated tool. Decision: Phase 6b will use Stitch for the visual redesign direction, then implement actual animations with Framer Motion (`motion/react`) in Antigravity, same division of labor as the existing Stitch → Antigravity pipeline.
 - Logo: A simple original leaf mark, drawn as SVG in chat. It is a leaf-green (#5E8C61) rounded square holding a pale-green (#EAF3E1) leaf with a midrib line. app/icon.svg and public/logo.svg are the same drawing, so replace both together. It can be swapped later for a Stitch or Canva logo by replacing those two files and regenerating app/apple-icon.png.
@@ -212,7 +232,7 @@ Storage bucket: `plant-images` (public).
 
 - **Decision (2026-10-02): the frontend will be renovated with motion design (Phase 6b), and Phase 6b now comes BEFORE Phase 6 (Polish).** Done 2026-10-07 (details in the Phase 6b bullets below). Section 2b's roles and section 3's rule about not hand-writing screens still apply.
 
-- **Phase 6b: app renamed PatraVyadhi (2026-10-07).** The name is the top-bar wordmark and the page title; the top-bar links are "Classify" and "History". Internal names (the `project/` folder, the API title, the Supabase project) were not changed.
+- **Phase 6b: app renamed PatraVyadhi (2026-10-07).** The name is the top-bar wordmark and the page title; the top-bar links are "Classify", "History" and (since Phase 6) "Stats", plus "Sign out" (Phase 7). Internal names (the `project/` folder, the API title, the Supabase project) were not changed.
 - **Phase 6b: design direction (2026-10-07).** Nature-themed, poster-like, very little text, left-aligned, sentence case, low graphics. The palette is inspired by the howmanyplants.com design-system reference (not copied) and moved to light green. Tailwind theme tokens, referenced by name with no hardcoded hex in components: `background` #EAF3E1, `surface-raised` #F3F8EC, `card` (lilac) #E8D1EB, `text` #222222, `accent` (olive-yellow) #BFB33B, `leaf` (deeper green) #5E8C61. No white or cream anywhere. A typewriter-style display font (Tailwind class `font-typewriter`) plus a clean sans-serif, two weights only; the exact font families are set in `frontend/app/layout.tsx` / `tailwind.config.ts`. The 3 screens were designed in Stitch, exported as code plus screenshots, and rebuilt in Next.js by Antigravity.
 - **Phase 6b: Spline considered and dropped (2026-10-07).** Spline is a 3D design tool, not a screen generator, and live WebGL scenes risk making the dev machine heavy. Decision: Stitch for design plus Framer Motion for motion; any 3D objects are static images only, never a live 3D scene.
 - **Phase 6b: decoration images are static (2026-10-07).** The leaf, droplet and seed images were generated in Stitch; the user removed their backgrounds in Canva and saved them as transparent PNGs in `frontend/public/decor/` (same file names). The first version looked bad because the PNGs still had white boxes around them; the images were then enlarged and replaced with the transparent files. `leaf.png` and `droplet.png` are used (floating with a small tilt); `seed.png` is unused. Keep each image small in file size.
@@ -229,6 +249,18 @@ Storage bucket: `plant-images` (public).
 - **Phase 6: evaluation write-up (2026-10-10).** `docs/EVALUATION.md` reports the real numbers from `ml/evaluation/` (`classification_report.txt`, `metrics.json`, the two plots): test accuracy 99.48% (42 wrong of 8,146), top-3 accuracy 99.96%, macro F1 0.9918, best validation accuracy 99.44% at epoch 8, split 38,013 / 8,146 / 8,146 from 54,305 images. It includes the 0.60-threshold table: at 0.60, 98.04% of test images get an answer, those are right 99.87% of the time, and 32 of the 42 errors are shown as "not sure". These are lab-style numbers only and the document says so; real phone photos scored 10-25% confidence in informal tests (section 9).
 - **Phase 6: History filter is a type-ahead dropdown (2026-10-10).** The old text box sent whatever was typed to `GET /predictions?label=`, which only matches a full raw label exactly, so "pepper" found nothing. It is now `components/LabelCombobox.tsx`: typing narrows a list of readable disease names (every typed word must start a word in the name; names starting with the typed text come first, so "p" lists Peach, Pepper, Potato first), arrow keys and Enter work, and choosing a name sends the exact raw label. Typed text alone never filters. The 38 labels live in `frontend/lib/labels.ts`, a copy of `ml/export/labels.json` (the frontend cannot import from `ml/`). The backend is unchanged.
 - **Phase 6: deviations from section 2b (2026-10-10).** Antigravity's quota was exhausted until 2026-10-14, so all Phase 6 frontend files were written by the AI chat assistant and pasted in by the user. The Phase 6b `AdviceTabs.tsx` rewrites (wrap fix, then slider version) were done the same way. The user approved.
+
+- **Phase 7: auth design (2026-10-10).** Supabase Auth with email code (OTP) and Google. The frontend signs in with `@supabase/supabase-js` (public key, PKCE, session in the browser) and sends the access token to FastAPI. FastAPI verifies it in `app/auth.py`: the project's signing key is ECC P-256 (ES256), so the check fetches public keys from `<SUPABASE_URL>/auth/v1/.well-known/jwks.json` (`PyJWT[crypto]`, `PyJWKClient`, keys cached), and verifies signature, expiry, audience `authenticated` and issuer. No JWT secret is stored anywhere. `get_current_user` is a plain `def` dependency (the plain-`def` rule applies).
+- **Phase 7: the backend, not RLS, is the real protection.** The backend uses the service-role key, which bypasses RLS, so every `predictions` query in `db.py` takes a `user_id` and filters on it, and `insert_prediction` sets it. RLS and the storage policies are a safety net for any direct access with the public key.
+- **Phase 7: per-user stats, global `disease_info` (user's decisions).** `GET /stats` counts only the signed-in user's scans. `GET /disease-info/{label}` stays global because it is a shared advice cache with no user data, but it requires login. Consequence: any user's confident scan fills the cache for everyone.
+- **Phase 7: private bucket with signed URLs (user's decision; replaces the earlier "bucket is public" decision).** The `plant-images` bucket is private. New images are stored at `<user_id>/<uuid>.<ext>`. The backend returns `image_url` as a 1-hour signed URL on `POST /predict` and on every `PredictionRecord`. `lib/storage.ts` was deleted. `NEXT_PUBLIC_SUPABASE_URL` is still used, but now only by `lib/supabase.ts`.
+- **Phase 7: cross-user access returns 404, not 403**, so prediction ids can't be probed. A malformed (non-UUID) id also returns 404.
+- **Phase 7: existing rows and images were deleted by the user** before `user_id` was made NOT NULL, so there was no migration.
+- **Phase 7: frontend session handling.** `components/AuthProvider.tsx` wraps the app inside `MotionProvider`; signed out → redirected to `/login`, signed in on `/login` → `/`, and a blank screen shows while the session loads so protected pages never call the API without a token. `TopBar` hides on `/login` and has a Sign out button. `apiFetch()` signs out on any 401.
+- **Phase 7: email sender.** Supabase's built-in sender can't edit templates, so custom SMTP is required. Gmail SMTP was tried first and failed with `535 Username and Password not accepted`. The real cause was that the old settings were still active when Brevo was tested. **Brevo SMTP** is the working sender (host `smtp-relay.brevo.com`, port 587, login and SMTP key from Brevo's SMTP page; the sender address must be verified in Brevo). The "Confirm sign up" and "Magic link or OTP" templates both show `{{ .Token }}` so users get a code, not a link. The login code box accepts 6 to 10 digits.
+- **Phase 7: Supabase dashboard settings.** URL Configuration: Site URL `http://localhost:3000`, redirect URL `http://localhost:3000/**`. Google provider enabled with an OAuth client whose redirect URI is the Supabase callback URL and whose JavaScript origin is `http://localhost:3000`. The Google app is in "Testing" mode (only listed test users can sign in).
+- **Phase 7: deviations from section 2b (2026-10-10).** All Phase 7 frontend files were written by the AI chat assistant, not Stitch → Antigravity, because Antigravity's quota is exhausted until 2026-10-14. The user approved. The login screen reuses the existing theme tokens and has not been through a Stitch design pass.
+- **Phase 7: Tailwind v4 incident.** After `npm install` the frontend failed with "It looks like you're trying to use `tailwindcss` directly as a PostCSS plugin" because Tailwind v4 had been installed while the config is v3. Fixed with `npm install -D tailwindcss@3 postcss autoprefixer` and deleting `.next`. Keep `tailwindcss` on `^3.4`.
 
 ## 9. Known issues and next steps
 - PlantVillage images are lab-style; the 99.48% test accuracy is on held-out images from the same distribution, not real phone photos. **Now confirmed as a real pattern, not a one-off**: multiple real-world test photos (natural lighting, cluttered/dark backgrounds, visible insect damage) all landed at 10–25% confidence with scattered, unrelated top-3 labels. `is_uncertain` correctly flags all of them rather than hiding them, but expect a meaningfully lower real-world accuracy than the reported test number, and plan real-world-style UX (Phase 6) accordingly. Seen again in Phase 5 testing (2026-10-02): a beech leaf → "Tomato — Early blight" 78%, a car photo → "Tomato — Early blight" 49.6% (flagged uncertain). The model has no "none of these" class and always picks one of its 38, so out-of-species leaves look confident. Accepted limitation (no retrain, see section 8): the Gemini leaf check only filters non-leaves, not unsupported species, so Phase 6 UX should set expectations (supported plants, photo tips, uncertainty message).
@@ -252,8 +284,14 @@ Storage bucket: `plant-images` (public).
 - **Known (Phase 6): stats scale.** `db.get_stats()` tallies top diseases by paging through `predictions` 1000 rows at a time. Fine now; replace with a SQL view or RPC if the table grows large.
 - **Resolved (Phase 6):** after replacing `backend/app/main.py`, uvicorn once failed with `Attribute "app" not found in module "app.main"` because the file had been saved empty/with wrong contents; re-pasting the correct file fixed it. Verify replaced files as in section 3 (`Select-String`).
 - **Note (Phase 6b):** Antigravity's usage quota can run out mid-task ("Individual quota reached"; this account's quota refreshes 2026-10-14). If it stops partway, check which files were already changed (Source Control / `git status`) before re-running a prompt.
-- Next: Phase 7 Auth (the user will give the specific instructions next session), then Phase 8 Ship. Phase 7 will need: Supabase Auth (email OTP + Google), `user_id` NOT NULL + FK on `predictions`, a JWT check in FastAPI, RLS on both tables and the `plant-images` bucket, and frontend login screens (Stitch → Antigravity per section 2b). Note `GET /stats` and `GET /disease-info/{label}` will need a decision: per-user stats (scoped by `user_id`) vs global.
-- Browsers cache tab icons hard. If an icon change doesn’t show, hard-refresh (Ctrl+Shift+R) or open the site in a private window.
+- **Known (Phase 7): signed image URLs expire after 1 hour.** A History or Detail page left open longer shows "Image unavailable" or broken images until reloaded. Fine for now; if it bothers anyone, refetch on focus or lengthen the expiry (`SIGNED_URL_TTL_SECONDS` in `db.py`).
+- **Known (Phase 7): Google sign-in is in "Testing" mode.** Only the listed test users can sign in. Publish the OAuth app in Phase 8, and add the production site URL to the Supabase URL Configuration and the Google OAuth client (origins and redirect URIs).
+- **Known (Phase 7): email sender is a personal Gmail address verified in Brevo.** Fine for development, but deliverability may be poor. Set up a domain sender (for example Resend or Brevo with a verified domain) in Phase 8. Supabase also applies a 60-second minimum interval between emails per user.
+- **Known (Phase 7): `disease_info` is global**, so any user's confident scan fills the shared cache. No action needed.
+- **Known (Phase 7): the Supabase session is stored in the browser's localStorage** (supabase-js default). Acceptable for this app; revisit with cookie-based sessions only if server-side rendering of protected pages is ever needed.
+- **Watch (Phase 7): `GET /stats` still tallies by paging 1000 rows**, now per user, so it is cheaper than before. Same advice as before if the table grows.
+- **Next:** Phase 8 Ship (Highlight.io, Docker, deploy, README). It will need: production URLs in Supabase URL Configuration and the Google OAuth client, publishing the Google app, a proper email sender, CORS `FRONTEND_ORIGIN` set to the deployed frontend, the backend env vars on Render/Railway, the frontend env vars on Vercel (never the service-role key), and a re-check of the IPv4 DNS patch in `db.py` on the host.
+- Browsers cache tab icons hard. If an icon change doesn't show, hard-refresh (Ctrl+Shift+R) or open the site in a private window.
 
 ## 10. Next session starter prompt
 Copy everything below (with the current PROJECT_CONTEXT.md pasted in) to start the next session.
@@ -265,24 +303,27 @@ Read it fully before answering, including the architecture section and the worki
 
 [PASTE THE FULL CONTENTS OF PROJECT_CONTEXT.md HERE]
 
-CURRENT PHASE: Phase 7 (Auth), then Phase 8 (Ship)
-WHAT I'M DOING RIGHT NOW: Phases 0-6b are complete (Gemini leaf pre-check + cached advice;
-motion frontend redesign; Phase 6 polish: photo tips, stats page, evaluation write-up,
-type-ahead History filter). The model stays PlantVillage-only (section 8). I'm starting
-Phase 7 (Auth); I'll give the specific instructions in this session.
+CURRENT PHASE: Phase 8 (Ship)
+WHAT I'M DOING RIGHT NOW: Phases 0-7 are complete (Gemini leaf pre-check + cached advice;
+motion frontend redesign; Phase 6 polish; Phase 7 auth: Supabase email code via Brevo +
+Google, ES256 JWT check in FastAPI, RLS, private bucket with signed URLs, per-user History
+and Stats). The model stays PlantVillage-only (section 8). I'm starting Phase 8 (Ship);
+I'll give the specific instructions in this session.
 BACKEND PLATFORM: local venv (backend on localhost:8000, frontend on localhost:3000)
-PROBLEM OR TASK: <fill in: what you want done for Phase 7>
+PROBLEM OR TASK: <fill in: what you want done for Phase 8>
 
 RULES
 - Follow section 2b's "who does what" - if a task belongs to Stitch, Antigravity,
   Google AI Studio, or another named tool/person, say so and don't silently do it
   yourself instead. Ask me first if you're unsure whose job something is.
-- Only work on the current phase (Phase 7). Do not start Phase 8 work.
+- Only work on the current phase (Phase 8).
 - Follow the folder structure, file names and paths in PROJECT_CONTEXT.md exactly
   - root folder is `project/`, not `plant-disease-classifier/`.
 - Before assuming any API response shape, check section 6 - it is confirmed
   against the real backend code, not guessed. If you still need to guess something
   not covered there, tell me explicitly and ask, rather than assuming silently.
+- If you need the current code of a file you haven't seen, ask me to paste it; don't
+  rewrite files from memory.
 - If something conflicts with PROJECT_CONTEXT.md, stop and ask me first.
 - Give complete code for the file being changed, and explain what each part does.
 - At the end, tell me exactly which sections of PROJECT_CONTEXT.md changed and

@@ -1,8 +1,11 @@
 """POST /predict - the core inference endpoint (section 6).
 
-Pipeline (section 2b): validate -> [Phase 5] Gemini leaf pre-check ->
-ONNX inference -> upload image + insert row -> [Phase 5] advice from the
-disease_info cache (Gemini only on a cache miss).
+Pipeline (section 2b): authenticate -> validate -> [Phase 5] Gemini leaf
+pre-check -> ONNX inference -> upload image + insert row -> [Phase 5] advice
+from the disease_info cache (Gemini only on a cache miss).
+
+Auth runs first (FastAPI dependency), so an unauthenticated request never
+reaches Gemini or storage.
 
 The [TIMING] prints are kept deliberately (they were added to diagnose the
 Phase 4 latency issue, now resolved) so the cost of the two Gemini calls stays
@@ -11,9 +14,10 @@ visible.
 import time
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from app import db, gemini, model
+from app.auth import get_current_user
 from app.config import settings
 from app.schemas import Advice, PredictResponse
 
@@ -48,7 +52,10 @@ def _get_advice(label: str) -> Optional[Advice]:
 
 
 @router.post("/predict", response_model=PredictResponse)
-def predict(file: UploadFile = File(...)) -> PredictResponse:
+def predict(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user),
+) -> PredictResponse:
     if file.content_type not in settings.ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
@@ -93,15 +100,19 @@ def predict(file: UploadFile = File(...)) -> PredictResponse:
     t_infer = time.perf_counter()
     print(f"[TIMING] model.predict_image: {t_infer - t_leaf:.3f}s")
 
-    image_path = db.upload_image(image_bytes, file.content_type)
+    image_path = db.upload_image(user_id, image_bytes, file.content_type)
     t_upload = time.perf_counter()
     print(f"[TIMING] db.upload_image:     {t_upload - t_infer:.3f}s")
 
-    image_url = db.get_public_url(image_path)
+    # Private bucket: the frontend gets a signed URL that expires in 1 hour.
+    image_url = db.create_signed_url(image_path)
     t_url = time.perf_counter()
-    print(f"[TIMING] db.get_public_url:   {t_url - t_upload:.3f}s")
+    print(f"[TIMING] db.create_signed_url:{t_url - t_upload:.3f}s")
+    if image_url is None:
+        raise HTTPException(status_code=500, detail="Could not create image URL.")
 
     row = db.insert_prediction(
+        user_id,
         {
             "image_path": image_path,
             "predicted_label": result["label"],
@@ -109,7 +120,7 @@ def predict(file: UploadFile = File(...)) -> PredictResponse:
             "top3": result["top3"],
             "is_uncertain": result["is_uncertain"],
             "model_version": settings.MODEL_VERSION,
-        }
+        },
     )
     t_insert = time.perf_counter()
     print(f"[TIMING] db.insert_prediction:{t_insert - t_url:.3f}s")
