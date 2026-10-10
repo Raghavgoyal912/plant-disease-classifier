@@ -56,6 +56,21 @@ export interface PaginatedPredictions {
   total: number;
 }
 
+// Returned by GET /stats (Phase 6). Plain counts; percentages are computed
+// in the page.
+export interface DiseaseCount {
+  label: string;
+  count: number;
+}
+
+export interface StatsResponse {
+  total_scans: number;
+  uncertain_scans: number;
+  feedback_yes: number;
+  feedback_no: number;
+  top_diseases: DiseaseCount[];
+}
+
 // Thrown for any non-2xx response. `code` is set when the backend sent a
 // structured detail ({ code, message }), e.g. "not_a_leaf" from POST /predict.
 export class ApiError extends Error {
@@ -154,4 +169,9 @@ export async function getDiseaseInfo(label: string): Promise<Advice | null> {
     return null;
   }
   return handleResponse<Advice>(res);
+}
+
+export async function getStats(): Promise<StatsResponse> {
+  const res = await fetch(`${API_BASE_URL}/stats`);
+  return handleResponse<StatsResponse>(res);
 }

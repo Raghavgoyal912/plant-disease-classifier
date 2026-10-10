@@ -68,3 +68,18 @@ class PaginatedPredictions(BaseModel):
 class FeedbackRequest(BaseModel):
     correct: bool
     corrected_label: Optional[str] = None
+
+
+class DiseaseCount(BaseModel):
+    label: str
+    count: int
+
+
+class StatsResponse(BaseModel):
+    """Response model for GET /stats (Phase 6). Plain counts; the frontend
+    works out the percentages."""
+    total_scans: int
+    uncertain_scans: int
+    feedback_yes: int
+    feedback_no: int
+    top_diseases: List[DiseaseCount]

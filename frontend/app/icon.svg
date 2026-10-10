@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="PatraVyadhi">
+  <rect width="64" height="64" rx="14" fill="#5E8C61"/>
+  <path d="M17 47 C15 27 29 14 49 14 C50 34 38 48 17 47 Z" fill="#EAF3E1"/>
+  <path d="M12 52 L43 21" fill="none" stroke="#5E8C61" stroke-width="2.6" stroke-linecap="round"/>
+</svg>

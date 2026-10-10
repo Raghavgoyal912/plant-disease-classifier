@@ -9,6 +9,16 @@ import { ConfidenceBar } from "@/components/ConfidenceBar";
 import { AdviceTabs } from "@/components/AdviceTabs";
 import { motion, AnimatePresence } from "motion/react";
 
+// The 14 crops the model was trained on (the 38 classes in backend labels.json).
+const SUPPORTED_CROPS =
+  "apple, blueberry, cherry, corn, grape, orange, peach, pepper, potato, raspberry, soybean, squash, strawberry and tomato";
+
+const PHOTO_TIPS = [
+  "Fill the frame with a single leaf.",
+  "Use daylight. Avoid shadows and glare.",
+  "Hold the camera steady so the leaf is sharp.",
+];
+
 export default function ClassifyPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -85,10 +95,6 @@ export default function ClassifyPage() {
       <div className="relative z-10 w-full max-w-4xl mx-auto py-4 sm:py-8">
         {/* Editorial Headline */}
         <header className="mb-8 md:mb-12 text-left">
-          <div className="flex items-center gap-2 text-leaf text-xs font-medium tracking-wide mb-2">
-            <span className="w-2 h-2 rounded-full bg-accent" />
-            <span>Botanical pathology engine</span>
-          </div>
           <h1 className="font-typewriter text-4xl sm:text-5xl md:text-6xl text-text font-normal tracking-tight text-left">
             Know your leaf.
           </h1>
@@ -111,11 +117,8 @@ export default function ClassifyPage() {
                 <span className="w-3 h-3 rounded-full bg-accent" />
               </div>
               <h2 className="font-typewriter text-2xl sm:text-3xl text-text font-normal mb-2 text-center">
-                Analyzing specimen...
+                Analyzing...
               </h2>
-              <p className="text-sm text-text/70 max-w-sm mx-auto text-center font-normal">
-                Segmenting leaf contours and computing diagnostic patterns.
-              </p>
               <AnalyzingLine />
             </motion.div>
           )}
@@ -131,16 +134,13 @@ export default function ClassifyPage() {
               <div className="w-16 h-16 rounded-full bg-card/60 mx-auto flex items-center justify-center mb-6">
                 <span className="font-typewriter text-2xl text-text">✕</span>
               </div>
-              <span className="text-xs uppercase tracking-wider text-text/60 font-medium block mb-2 text-center">
-                Non-botanical specimen
-              </span>
               <h2 className="font-typewriter text-2xl sm:text-3xl text-text font-normal mb-3 text-center">
                 That doesn't look like a leaf.
               </h2>
               <p className="text-sm text-text/70 max-w-md mx-auto mb-8 text-center font-normal">
                 {error && error !== "That doesn't look like a leaf."
                   ? error
-                  : "No botanical leaf structure or chlorophyll patterns were detected. Please upload a clear photo of a plant leaf."}
+                  : "Please upload a clear photo of a plant leaf."}
               </p>
               <button
                 type="button"
@@ -161,7 +161,7 @@ export default function ClassifyPage() {
               className="w-full bg-surface-raised rounded-2xl p-8 sm:p-12 text-center border border-leaf/20 max-w-xl mx-auto"
             >
               <h2 className="font-typewriter text-xl sm:text-2xl text-text font-normal mb-3 text-center">
-                Unable to complete diagnosis
+                Something went wrong.
               </h2>
               <p className="text-sm text-text/70 max-w-md mx-auto mb-6 text-center font-normal">
                 {error}
@@ -187,15 +187,32 @@ export default function ClassifyPage() {
               <div className="w-16 h-16 rounded-full bg-surface-raised mx-auto flex items-center justify-center mb-6">
                 <span className="font-typewriter text-2xl text-text">?</span>
               </div>
-              <span className="text-xs uppercase tracking-wider text-text/60 font-medium block mb-2 text-center">
-                Indeterminate diagnosis
-              </span>
               <h2 className="font-typewriter text-3xl sm:text-4xl text-text font-normal mb-3 text-center">
                 We're not sure.
               </h2>
-              <p className="text-sm text-text/70 max-w-md mx-auto mb-8 text-center font-normal">
-                Try a clearer, closer photo of a single leaf in good light.
+              <p className="text-sm text-text/70 max-w-md mx-auto mb-6 text-center font-normal">
+                The photo wasn't clear enough to be sure.
               </p>
+
+              <div className="mx-auto mb-8 max-w-md rounded-xl border border-leaf/15 bg-surface-raised/80 p-4 text-left sm:p-6">
+                <span className="mb-3 block text-xs font-medium text-text/60">
+                  Tips for a better photo
+                </span>
+                <ul className="space-y-2 text-sm text-text/80">
+                  {PHOTO_TIPS.map((tip) => (
+                    <li key={tip} className="flex items-start gap-2">
+                      <span
+                        aria-hidden="true"
+                        className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-leaf"
+                      />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-4 border-t border-leaf/15 pt-3 text-xs text-text/60">
+                  Works on {SUPPORTED_CROPS}.
+                </p>
+              </div>
 
               {previewUrl && (
                 <div className="mx-auto mb-8 max-w-xs overflow-hidden rounded-xl border border-leaf/20 bg-surface-raised p-2">
@@ -212,7 +229,7 @@ export default function ClassifyPage() {
               )}
 
               <div className="mb-8 text-left bg-surface-raised/80 rounded-xl p-4 sm:p-6 max-w-md mx-auto border border-leaf/15">
-                <span className="text-xs font-medium uppercase tracking-wide text-text/60 block mb-3 text-left">
+                <span className="text-xs font-medium text-text/60 block mb-3 text-left">
                   Closest possibilities
                 </span>
                 <div className="space-y-3">
@@ -260,7 +277,6 @@ export default function ClassifyPage() {
                   />
                 </div>
                 <div className="pt-3 px-1 flex items-center justify-between text-xs text-text/60">
-                  <span>Specimen diagnosis</span>
                   <span>Model {result.model_version}</span>
                 </div>
               </div>
@@ -273,15 +289,11 @@ export default function ClassifyPage() {
                 className="lg:col-span-7 bg-card/40 rounded-2xl p-6 sm:p-8 border border-leaf/15 flex flex-col justify-between"
               >
                 <div>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-leaf/15 text-leaf text-xs font-medium uppercase tracking-wide mb-3">
-                    <span>Pathology identified</span>
-                  </div>
-
                   <motion.h2
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.4, delay: 0.15 }}
-                    className="font-typewriter text-2xl sm:text-3xl md:text-4xl text-text font-normal tracking-tight text-left capitalize mb-4"
+                    className="font-typewriter text-2xl sm:text-3xl md:text-4xl text-text font-normal tracking-tight text-left mb-4"
                   >
                     {formatLabel(result.label)}
                   </motion.h2>
@@ -289,8 +301,8 @@ export default function ClassifyPage() {
                   {/* Confidence metric */}
                   <div className="mb-6 bg-surface-raised/80 rounded-xl p-4 border border-leaf/15 text-left">
                     <div className="flex items-baseline justify-between mb-2">
-                      <span className="text-xs uppercase tracking-wider text-text/60 font-medium">
-                        Model confidence
+                      <span className="text-xs text-text/60 font-medium">
+                        Confidence
                       </span>
                       <span className="font-typewriter text-xl sm:text-2xl font-normal text-text">
                         {formatPercent(result.confidence)}
@@ -304,8 +316,8 @@ export default function ClassifyPage() {
 
                   {/* Top 3 Alternatives */}
                   <div className="mb-6 bg-surface-raised/80 rounded-xl p-4 border border-leaf/15 text-left">
-                    <span className="text-xs uppercase tracking-wider text-text/60 font-medium block mb-3 text-left">
-                      Alternative candidates
+                    <span className="text-xs text-text/60 font-medium block mb-3 text-left">
+                      Other possibilities
                     </span>
                     <div className="space-y-3">
                       {result.top3.map((item, idx) => (
@@ -417,12 +429,11 @@ export default function ClassifyPage() {
                   </div>
 
                   <p className="font-typewriter text-xl sm:text-2xl text-text font-normal mb-2 text-center">
-                    Drop fresh specimen capture here
+                    Drop a leaf photo here
                   </p>
 
                   <p className="text-sm text-text/70 max-w-md mx-auto mb-8 text-center font-normal">
-                    High-contrast macro captures of diseased leaves yield highest
-                    classification fidelity. Supports JPG, PNG, WEBP.
+                    Best results: one leaf, close up, good light, plain background.
                   </p>
 
                   <label
@@ -452,20 +463,9 @@ export default function ClassifyPage() {
                     onChange={handleFileChange}
                   />
 
-                  <div className="mt-8 pt-6 border-t border-leaf/15 flex flex-wrap items-center justify-center gap-6 text-xs text-text/60">
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-leaf" />
-                      Single leaf macro capture
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-leaf" />
-                      38 botanical pathologies
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-leaf" />
-                      Instant neural inference
-                    </span>
-                  </div>
+                  <p className="mt-8 max-w-md border-t border-leaf/15 pt-6 text-center text-xs text-text/60">
+                    Works on {SUPPORTED_CROPS}.
+                  </p>
                 </div>
               )}
             </div>

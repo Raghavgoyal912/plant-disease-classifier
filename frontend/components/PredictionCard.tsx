@@ -28,19 +28,15 @@ export function PredictionCard({ prediction, index }: PredictionCardProps) {
       >
         <div>
           <div className="mb-3 flex items-center justify-between text-xs text-text/70">
-            <span className="font-typewriter uppercase tracking-wider">
+            <span className="font-typewriter">
               {new Date(prediction.created_at).toLocaleDateString(undefined, {
                 month: "short",
                 day: "numeric",
               })}
             </span>
-            {prediction.is_uncertain ? (
+            {prediction.is_uncertain && (
               <span className="rounded-full bg-accent/30 px-2.5 py-0.5 font-medium text-text">
                 Uncertain
-              </span>
-            ) : (
-              <span className="rounded-full bg-surface-raised/80 px-2.5 py-0.5 font-medium text-leaf">
-                Verified
               </span>
             )}
           </div>
@@ -58,14 +54,14 @@ export function PredictionCard({ prediction, index }: PredictionCardProps) {
           </div>
 
           <div className="text-left">
-            <h2 className="truncate font-typewriter text-lg font-normal text-text capitalize">
+            <h2 className="truncate font-typewriter text-lg font-normal text-text">
               {formatLabel(prediction.predicted_label)}
             </h2>
           </div>
         </div>
 
         <div className="mt-4 flex items-center justify-between border-t border-text/10 pt-3 text-xs text-text/70">
-          <span>Review dossier</span>
+          <span>View scan</span>
           <span className="transition-transform group-hover:translate-x-1">
             &rarr;
           </span>

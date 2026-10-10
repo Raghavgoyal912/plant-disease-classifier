@@ -30,7 +30,7 @@ FastAPI (localhost:8000)
    |-- 5. upload image to Supabase Storage, insert row in predictions
    |-- 6. [Phase 5] fetch/generate advice from disease_info (cached; Gemini only on cache miss)
    v
-Response JSON -> result card. History page reads via GET /predictions. Detail page reads GET /predictions/{id}, plus GET /disease-info/{label} (cache lookup only, no Gemini) for confident scans.
+Response JSON -> result card. History page reads via GET /predictions. Detail page reads GET /predictions/{id}, plus GET /disease-info/{label} (cache lookup only, no Gemini) for confident scans. Stats page reads GET /stats (counts only).
 
 ### Who does what
 - Stitch: designs the 3 screens (Classify, History, Detail), exports React/Tailwind code. For Phase 6b it was used for a motion-forward, low-graphics, nature-themed direction and generated the small decoration images (leaf, droplet, seed). Its animation output is concept/static only; the real animation (Framer Motion) is built in Antigravity. Spline was considered and dropped (section 8).
@@ -43,6 +43,8 @@ Response JSON -> result card. History page reads via GET /predictions. Detail pa
 
 **Note (Phase 4 deviation, see section 8):** the actual Phase 4 frontend was hand-built directly by the AI chat assistant instead of via Stitch → Antigravity, because the user preferred to reuse an already-built implementation rather than repeat a design pass. This section describes the intended pipeline; section 8 records why Phase 4 diverged from it, and Phase 6b (section 4) is when the real Stitch → Antigravity pipeline is picked back up for the visual/motion redesign.
 
+**Note (Phase 6 deviations, see section 8):** all Phase 6 frontend files (photo tips, text cleanup, stats page, History filter) were written by the AI chat assistant, not Antigravity, because Antigravity's quota was exhausted until 2026-10-14. The backend `GET /stats` route is backend code, so it was the chat assistant's job anyway.
+
 **Note (Phase 6b deviations, see section 8):** Phase 6b followed the Stitch → Antigravity pipeline. Two small deviations happened because Antigravity's usage quota ran out mid-task: the backend route `app/routes/disease_info.py` was supplied by the AI chat assistant (backend code is its job anyway), and `components/AdviceTabs.tsx` was rewritten twice in chat (tab-wrap fix, then the slider version). Section 3's rule still applies: ask before substituting hand-written screens for the pipeline.
 
 ## 3. Constraints and working rules
@@ -52,7 +54,7 @@ Response JSON -> result card. History page reads via GET /predictions. Detail pa
 - Everything runs locally first: frontend `localhost:3000`, backend `localhost:8000`.
 - Secrets live only in `.env` files (never committed). Supabase service-role key and Gemini key are server-side only.
 - Commit to Git after every working step.
-- **How to run locally (Windows/PowerShell, project at `D:\Project`):** two terminals. Backend: `cd backend`, activate the venv (`.\venv\Scripts\Activate.ps1`), `pip install -r requirements.txt` (only after requirements change), then `uvicorn app.main:app --reload --port 8000`. Frontend: `cd frontend`, `npm run dev`. Check the backend at `http://localhost:8000/docs`, the app at `http://localhost:3000`. `--reload` does NOT pick up `.env` changes — Ctrl+C and restart after editing `.env`. When replacing project files, verify with e.g. `Select-String -Path app\config.py -Pattern "GEMINI"` that the new version actually landed (a failed overwrite once left the old Phase 4 code running with no error).
+- **How to run locally (Windows/PowerShell, project at `D:\Project`):** two terminals. Backend: `cd backend`, activate the venv (`.\venv\Scripts\Activate.ps1`), `pip install -r requirements.txt` (only after requirements change), then `uvicorn app.main:app --reload --port 8000`. Frontend: `cd frontend`, `npm run dev`. Check the backend at `http://localhost:8000/docs`, the app at `http://localhost:3000`. If `pip.exe` is blocked by an Application Control policy, use `python -m pip install -r requirements.txt` instead. `--reload` does NOT pick up `.env` changes — Ctrl+C and restart after editing `.env`. When replacing project files, verify with e.g. `Select-String -Path app\config.py -Pattern "GEMINI"` that the new version actually landed (a failed overwrite once left the old Phase 4 code running with no error).
 - Whenever PROJECT_CONTEXT.md is updated (end of a phase, a bug fix, a decision change), review every section for what needs to change — not just section 4 (status). At minimum check: section 4 (roadmap/status), section 5 (folder structure, if new files were added), section 6 (API contract, if it changed), section 7 (schema, if it changed), section 8 (key decisions, if a new one was made or an assumption was corrected), section 9 (known issues, if one was found or resolved), and section 10 (fill in the phase-prompt template with that phase's actual outcome). Tell the user exactly which sections changed and give the full updated text for each.
 - **Before generating or wiring any frontend screen, check section 2b's "who does what" and follow it — don't substitute hand-written screens for the Stitch → Antigravity pipeline without asking first.** (Added after Phase 4 deviated from this once.)
 
@@ -64,16 +66,16 @@ Response JSON -> result card. History page reads via GET /predictions. Detail pa
 - [x] Phase 4: Frontend (Stitch screens, Antigravity wiring) — functional wiring complete, both open bugs resolved (see section 9). Visual design intentionally left as the hand-built stopgap (section 8); real redesign deferred to Phase 6b.
 - [x] Phase 5: Gemini features (advice + leaf pre-check) — done 2026-10-02. Leaf pre-check prompt tested in Google AI Studio (leaf → true, non-leaf → false) and confirmed working in the app; advice shows in the result card and is cached in `disease_info`. Model: `gemini-3.1-flash-lite`.
 - [-] Phase 5b (retrain on real-world data): considered and DROPPED 2026-10-02 by the user. The project stays on the PlantVillage-only model `mnv2-plantvillage-v1`; no retraining is planned.
-- [ ] Phase 6: Polish (low-confidence UX, feedback button, filters, stats, evaluation write-up)   <- NEXT. Scope it first: a feedback control already exists on the Detail screen (since Phase 4) and the History screen already has its own paging/filter behavior, so confirm what is actually left before building.
+- [x] Phase 6: Polish — done 2026-10-10. Added a leaf logo (browser-tab icon, iPhone icon, top-bar logo). Tab title edited in layout.tsx. No API or backend changes. Low-confidence UX (photo tips, supported-crops line, better "We're not sure" card), minimal-text cleanup of all screens, stats page (`GET /stats`), evaluation write-up (`docs/EVALUATION.md`), and a type-ahead disease filter on History. The feedback control already existed since Phase 4 and was only restyled in 6b. Details in section 8.
 - [x] Phase 6b: Motion frontend redesign — done 2026-10-07. The app is now named PatraVyadhi. Classify, History and Detail were rebuilt from the Stitch designs (light-green, nature-themed, poster-like, low-graphics) with Framer Motion animations; the Detail screen now shows cached advice via the new `GET /disease-info/{label}` (section 6). Details and deviations in section 8.
-- [ ] Phase 7: Auth (Supabase Auth, JWT check in FastAPI, RLS)
+- [ ] Phase 7: Auth (Supabase Auth, JWT check in FastAPI, RLS)   <- NEXT
 - [ ] Phase 8: Ship (Highlight.io, Docker, deploy, README)
 
-**Currently working on:** nothing in progress. Phase 6b is signed off; the next phase is Phase 6 (Polish). The user will give the specific Phase 6 instructions in the next session.
+**Currently working on:** nothing in progress. Phase 6 is signed off; the next phase is Phase 7 (Auth). The user will give the specific Phase 7 instructions in the next session.
 
-**Last thing that worked:** Phase 6b sign-off (2026-10-07): the user confirmed the redesigned screens look good, and Detail's advice tabs work end to end for a cached label (`Pepper,_bell___Bacterial_spot`, tested both in `/docs` and in the app). The tabs were then changed to a one-line, swipeable slider version, also confirmed good.
+**Last thing that worked:** Phase 6 sign-off (2026-10-10): the user confirmed the photo tips, text cleanup, `/stats` page and the redesigned screens work. The History filter was rebuilt as a type-ahead dropdown (typing "p" lists Peach, Pepper, Potato first; choosing a name sends the exact label); its matching logic was run against the real `labels.json` and the code type-checked, but the user ran the final browser test themselves.
 
-**Current problem(s):** none blocking. Known accepted limitations: real-world phone photos are less reliable than lab-style ones (section 9, first bullet), and Detail shows advice only for labels already in the `disease_info` cache (section 9).
+**Current problem(s):** none blocking. Known accepted limitations: real-world phone photos are less reliable than lab-style ones (section 9, first bullet); Detail shows advice only for labels already in the `disease_info` cache (section 9); the History filter picks one disease, not a whole crop (section 9).
 
 ## 5. Folder structure
 ```
@@ -87,6 +89,7 @@ project/
                app/gemini.py        (Phase 5: leaf pre-check + advice generation, the only file that calls Gemini)
                app/routes/predict.py, app/routes/predictions.py
                app/routes/disease_info.py      (Phase 6b: GET /disease-info/{label}, read-only cache lookup, no Gemini)
+               app/routes/stats.py             (Phase 6: GET /stats, read-only counts; uses db.get_stats)
                app/__init__.py, app/routes/__init__.py
                requirements.txt (now includes google-genai), .env.example (real .env is gitignored; Phase 5 adds GEMINI_API_KEY, GEMINI_MODEL, optional GEMINI_TIMEOUT_SECONDS)
 - frontend/    Next.js app
@@ -96,16 +99,21 @@ project/
                app/page.tsx                    (Classify screen)
                app/history/page.tsx            (History screen)
                app/predictions/[id]/page.tsx   (Detail screen)
+               app/icon.svg          
+               app/apple-icon.png    
                lib/api.ts       (typed fetch client — PredictResponse vs PredictionRecord, see section 6)
                lib/format.ts    (label/percent formatting, null-safe)
                lib/storage.ts   (builds a public image URL from image_path)
-               components/      (ConfidenceBar.tsx, AdviceTabs.tsx, and other small shared components added in Phase 6b — see frontend/components/)
+               app/stats/page.tsx              (Phase 6: Stats screen)
+               lib/labels.ts    (Phase 6: copy of ml/export/labels.json as `LABELS` plus `matchLabels()` for the History filter; regenerate if the model's classes change)
+               components/      (small shared components: ConfidenceBar, AdviceTabs, PredictionCard, TopBar, StatTile, LabelCombobox, Decor, AnalyzingLine, MotionProvider — see frontend/components/)
+               public/logo.svg
                public/decor/    (leaf.png, droplet.png, seed.png: transparent decoration images; seed.png is currently unused)
-- docs/        ai-design.md (prompt and decision log)
+- docs/        ai-design.md (prompt and decision log), EVALUATION.md (Phase 6: model evaluation write-up)
 ```
 Note: root folder is named `project/` (not `plant-disease-classifier/` as originally planned).
 
-## 6. API contract (confirmed against real backend code, 2026-09-26; Phase 5 additions 2026-10-01; Phase 6b addition 2026-10-07)
+## 6. API contract (confirmed against real backend code, 2026-09-26; Phase 5 additions 2026-10-01; Phase 6b addition 2026-10-07; Phase 6 addition 2026-10-10)
 `POST /predict`'s response and the list/detail/feedback responses are **two different shapes** — this wasn't spelled out clearly before and caused a real bug, so it's explicit now.
 
 - `POST /predict` : multipart form, field `file` (image). Returns `PredictResponse`:
@@ -140,6 +148,8 @@ Note: root folder is named `project/` (not `plant-disease-classifier/` as origin
 - `POST /predictions/{id}/feedback` : body `{ correct: bool, corrected_label? }`. Returns the updated `PredictionRecord`.
 
 - `GET /disease-info/{label}` (Phase 6b, 2026-10-07): `label` is the exact `labels.json` string, URL-encoded by the client (`getDiseaseInfo()` in `lib/api.ts` uses `encodeURIComponent`). Returns `DiseaseInfoResponse`: `{ summary, symptoms, treatment, prevention }` (all strings), read from the `disease_info` cache. Read-only: it never calls Gemini and never writes. Returns `404` with a plain string `detail` ("No advice cached for this label.") when there is no row or any of the four fields is empty; `getDiseaseInfo()` turns that 404 into `null`. The Detail screen calls it only when the record's `is_uncertain` is false.
+
+- `GET /stats` (Phase 6, 2026-10-10): no parameters. Returns `StatsResponse`: `{ total_scans, uncertain_scans, feedback_yes, feedback_no, top_diseases: [{label, count}] }` (all integers except `label`, a raw `labels.json` string). Read-only: counts rows in `predictions`, never calls Gemini, never writes. `top_diseases` is the 5 most frequent predicted labels among **confident** scans only (uncertain scans are excluded because their top label is probably wrong). The frontend computes the percentages (uncertain rate = `uncertain_scans / total_scans`; marked-correct rate = `feedback_yes / (feedback_yes + feedback_no)`, shown as "—" when no feedback exists).
 
 ## 7. Database schema (Supabase Postgres — confirmed matching live `db.py`/`schemas.py`)
 ```sql
@@ -186,6 +196,8 @@ Storage bucket: `plant-images` (public).
 - **Phase 4's frontend was hand-built directly**, not via Stitch → Antigravity as section 2b describes, because the user chose to reuse an already-built implementation rather than repeat the design step. The wiring/logic files (`lib/api.ts`, `lib/format.ts`, `lib/storage.ts`) carried over into the Phase 6b redesign unchanged apart from one addition: `getDiseaseInfo()` in `lib/api.ts` (section 6).
 - **IPv4-only DNS resolution workaround, added in `db.py` (2026-09-27):** the dev machine's network resolves the Supabase host to two IPv6 addresses in the `64:ff9b::/96` NAT64-synthesized range, which aren't actually routable here. The OS tried those first on every new connection, hanging ~21s each (~43s total) before falling back to the real IPv4 address — this, not the ONNX model, was the entire cause of the 15+ second `/predict` latency (confirmed via a standalone socket-level diagnostic: forced-IPv4 connects in ~0.06s vs ~42s default). Fixed by monkey-patching `socket.getaddrinfo` in `db.py` to filter out non-IPv4 results at import time. Environment-specific — worth re-checking once deployed to Render/Railway in Phase 8 (harmless to leave in either way).
 - **Stitch's motion/animation capability is limited, confirmed via research (2026-09-27):** Stitch can generate motion-forward visual concepts and "kinetic UI," but does not produce production animation code — reviews are consistent that real interaction/animation implementation still needs a dedicated tool. Decision: Phase 6b will use Stitch for the visual redesign direction, then implement actual animations with Framer Motion (`motion/react`) in Antigravity, same division of labor as the existing Stitch → Antigravity pipeline.
+- Logo: A simple original leaf mark, drawn as SVG in chat. It is a leaf-green (#5E8C61) rounded square holding a pale-green (#EAF3E1) leaf with a midrib line. app/icon.svg and public/logo.svg are the same drawing, so replace both together. It can be swapped later for a Stitch or Canva logo by replacing those two files and regenerating app/apple-icon.png.
+- Tab title: Set in frontend/app/layout.tsx under metadata.title (currently: PatraVyadhi). The description line is in the same file.
 
 - **Phase 5: Gemini lives in one module, `app/gemini.py`, and fails open (2026-10-01).** Both `check_is_leaf` and `generate_advice` catch every error (missing key, timeout, quota, blocked/invalid response), log a warning, and return `None`. A Gemini outage therefore never breaks classification: a `None` leaf check lets the image through, a `None` advice returns `advice: null`. Rationale: Gemini is a supporting tool (above), and the user chose "fail open" over "fail closed". Trade-off: during an outage, non-leaf images are no longer filtered. Uses the `google-genai` SDK with structured JSON output (`response_mime_type` + `response_schema`); client timeout is set in milliseconds from `GEMINI_TIMEOUT_SECONDS` (default 10).
 - **Phase 5: non-leaf images get HTTP 422 with `detail = {code: "not_a_leaf", message}`** and are not run through ONNX, uploaded, or stored (user's call, section 6). The reason Gemini gives is logged server-side only, not shown to the user.
@@ -210,6 +222,14 @@ Storage bucket: `plant-images` (public).
 - **Phase 6b: deviations from section 2b (2026-10-07).** Antigravity's usage quota ran out mid-task ("Individual quota reached", resets 2026-10-14). It had already done most of the `/disease-info` work (`DiseaseInfoResponse` in `schemas.py`, the router include in `main.py`, `getDiseaseInfo()` in `lib/api.ts`, the Detail page wiring) but never created `app/routes/disease_info.py`, so the backend would have failed on startup with an import error. That route file was supplied by the AI chat assistant, and `AdviceTabs.tsx` was rewritten in chat twice (tab-wrap fix, then the slider version). The user approved doing it this way.
 - **Phase 6b: "We're not sure" results were not caused by the redesign (2026-10-07).** When many clean-looking photos showed "We're not sure", the backend's `is_uncertain` flag (confidence below 0.60, section 8) was the cause; the frontend only displays it. The model needs clear, close, well-lit photos of one leaf. This is the known PlantVillage limitation (section 9), to be handled with UX in Phase 6.
 
+- **Phase 6: scope and what already existed (2026-10-10).** The roadmap listed low-confidence UX, feedback button, filters, stats and an evaluation write-up. The feedback control (Yes/No plus corrected label) already existed on Detail since Phase 4, so no new feedback work was done. Everything else was built, in the order: photo tips, text cleanup, stats, evaluation write-up, History filter.
+- **Phase 6: low-confidence UX (2026-10-10).** The upload area now says "Best results: one leaf, close up, good light, plain background." and ends with "Works on [14 crops]". The "We're not sure" card keeps the lilac card, the closest-possibilities bars and no advice, and gains a short "Tips for a better photo" box (fill the frame with one leaf; daylight, no shadows or glare; hold the camera steady) plus the same crops line. The crops list is `apple, blueberry, cherry, corn, grape, orange, peach, pepper, potato, raspberry, soybean, squash, strawberry and tomato`, derived from the 38 classes in `labels.json`, so update it if the model's classes ever change.
+- **Phase 6: minimal-text policy (2026-10-10).** Technical or decorative copy was removed from Classify, Detail, History and the History card (for example "Botanical pathology engine", "Archived dossier", "Specimen capture / PV-REC", "Neural confidence", "Herbarium archive", "Review dossier"), all-caps labels became sentence case, and the large poster-style headlines were kept. The History card's "Verified" badge was removed because a confident scan is not verified by anyone; only the "Uncertain" tag remains. Detail's feedback buttons now read "Yes" / "No" under "Was this correct?" and the delete control reads "Delete scan" (still confirms first).
+- **Phase 6: stats (2026-10-10).** New read-only `GET /stats` (section 6) and a `/stats` page with three tiles (Scans, Not sure, Marked correct) and a "Most scanned" list; "Stats" was added to the top bar. Counts come from four count queries plus a tally of confident scans per label. PostgREST has no GROUP BY, so the tally pages through `predictions` 1000 rows at a time in `db.get_stats()`; fine at personal scale, revisit with a Postgres view/RPC if the table gets large. The plain-`def` rule (section 8) applies to this route too.
+- **Phase 6: evaluation write-up (2026-10-10).** `docs/EVALUATION.md` reports the real numbers from `ml/evaluation/` (`classification_report.txt`, `metrics.json`, the two plots): test accuracy 99.48% (42 wrong of 8,146), top-3 accuracy 99.96%, macro F1 0.9918, best validation accuracy 99.44% at epoch 8, split 38,013 / 8,146 / 8,146 from 54,305 images. It includes the 0.60-threshold table: at 0.60, 98.04% of test images get an answer, those are right 99.87% of the time, and 32 of the 42 errors are shown as "not sure". These are lab-style numbers only and the document says so; real phone photos scored 10-25% confidence in informal tests (section 9).
+- **Phase 6: History filter is a type-ahead dropdown (2026-10-10).** The old text box sent whatever was typed to `GET /predictions?label=`, which only matches a full raw label exactly, so "pepper" found nothing. It is now `components/LabelCombobox.tsx`: typing narrows a list of readable disease names (every typed word must start a word in the name; names starting with the typed text come first, so "p" lists Peach, Pepper, Potato first), arrow keys and Enter work, and choosing a name sends the exact raw label. Typed text alone never filters. The 38 labels live in `frontend/lib/labels.ts`, a copy of `ml/export/labels.json` (the frontend cannot import from `ml/`). The backend is unchanged.
+- **Phase 6: deviations from section 2b (2026-10-10).** Antigravity's quota was exhausted until 2026-10-14, so all Phase 6 frontend files were written by the AI chat assistant and pasted in by the user. The Phase 6b `AdviceTabs.tsx` rewrites (wrap fix, then slider version) were done the same way. The user approved.
+
 ## 9. Known issues and next steps
 - PlantVillage images are lab-style; the 99.48% test accuracy is on held-out images from the same distribution, not real phone photos. **Now confirmed as a real pattern, not a one-off**: multiple real-world test photos (natural lighting, cluttered/dark backgrounds, visible insect damage) all landed at 10–25% confidence with scattered, unrelated top-3 labels. `is_uncertain` correctly flags all of them rather than hiding them, but expect a meaningfully lower real-world accuracy than the reported test number, and plan real-world-style UX (Phase 6) accordingly. Seen again in Phase 5 testing (2026-10-02): a beech leaf → "Tomato — Early blight" 78%, a car photo → "Tomato — Early blight" 49.6% (flagged uncertain). The model has no "none of these" class and always picks one of its 38, so out-of-species leaves look confident. Accepted limitation (no retrain, see section 8): the Gemini leaf check only filters non-leaves, not unsupported species, so Phase 6 UX should set expectations (supported plants, photo tips, uncertainty message).
 - Grouped split (by source-image id) reduces but doesn't fully eliminate near-duplicate leakage, so true generalization is somewhat below the reported test number.
@@ -224,11 +244,16 @@ Storage bucket: `plant-images` (public).
 - **Watch (Phase 5):** the leaf check can reject borderline real photos (or let non-leaves through during a Gemini outage, since it fails open). Check behavior on the same real-world photos used in the first bullet's testing.
 - **Resolved:** `app/page.tsx` imported `PredictionResult` from `lib/api.ts`, which only exports `PredictResponse` — a type-name mismatch left over from Phase 4. Fixed in Phase 5.
 - **Known (Phase 6b): Detail advice depends on the cache.** `GET /disease-info/{label}` only returns advice that is already in `disease_info`, which fills lazily on a confident `/predict` (section 8). At sign-off (2026-10-07) the table held one row, `Pepper,_bell___Bacterial_spot`. Scans saved before Phase 5, or while Gemini was unavailable, show no advice on Detail until a new confident photo of the same disease is classified. Options if this bothers the user later: a one-time script that generates all 38 labels programmatically from `labels.json`, or letting the route call Gemini on a miss (adds a Gemini call when Detail opens). Not done; the user chose lazy fill.
-- **Known (Phase 6b): extra text on the Detail screen.** Antigravity added labels not in the design brief, for example "Archived dossier", "Diagnostic identification record", "Specimen capture", "PV-REC" and "Field verification", and some labels use uppercase styling. This conflicts with the sentence-case, minimal-text direction. It is cosmetic and not fixed; a cleanup prompt can be written when wanted (candidate for Phase 6).
-- **Seen again (2026-10-07):** many clean-looking photos still gave "We're not sure" (the model needs clear, close, well-lit photos). Phase 6 UX should set expectations: supported plants, photo tips, and the uncertainty message.
+- **Resolved (Phase 6):** the extra text on the Detail screen ("Archived dossier", "PV-REC" and similar) was removed in the minimal-text cleanup (section 8). The Tailwind `capitalize` class that made titles read "Early Blight" was also removed from the Detail headline, the Classify result headline and the History card title (confirmed by the user, 2026-10-10), so disease names now show in the sentence case that `formatLabel` produces.
+- **Seen again (2026-10-07):** many clean-looking photos still gave "We're not sure" (the model needs clear, close, well-lit photos). Phase 6 added photo tips and the supported-crops line to set expectations; the underlying lab-vs-real-photo gap remains (section 9, first bullet).
 - **Housekeeping (Phase 6b):** `design-ref/` (a temporary copy of the Stitch export, screenshots and images in the project root) should be in `.gitignore` and deleted once no longer needed. The originals are also kept outside the repo in `D:\Project-design\`. It is not part of the section 5 structure.
+- **Known (Phase 6): the History filter picks one disease, not a whole crop.** Choosing "Pepper, bell — Bacterial spot" filters correctly, but there is no "all pepper" option because the backend matches one exact label. A crop-level filter would need a small backend change (for example accepting several labels or a prefix).
+- **Known (Phase 6): `frontend/lib/labels.ts` is a copy of `ml/export/labels.json`.** It must match the model's labels character for character (the strings go to the backend), and it cannot be imported from `ml/`. If the model is retrained with different classes, regenerate it, and update the supported-crops line on Classify.
+- **Known (Phase 6): stats scale.** `db.get_stats()` tallies top diseases by paging through `predictions` 1000 rows at a time. Fine now; replace with a SQL view or RPC if the table grows large.
+- **Resolved (Phase 6):** after replacing `backend/app/main.py`, uvicorn once failed with `Attribute "app" not found in module "app.main"` because the file had been saved empty/with wrong contents; re-pasting the correct file fixed it. Verify replaced files as in section 3 (`Select-String`).
 - **Note (Phase 6b):** Antigravity's usage quota can run out mid-task ("Individual quota reached"; this account's quota refreshes 2026-10-14). If it stops partway, check which files were already changed (Source Control / `git status`) before re-running a prompt.
-- Next: Phase 6 (Polish — the user will give the specific instructions next session), then Phase 7 Auth, then Phase 8 Ship.
+- Next: Phase 7 Auth (the user will give the specific instructions next session), then Phase 8 Ship. Phase 7 will need: Supabase Auth (email OTP + Google), `user_id` NOT NULL + FK on `predictions`, a JWT check in FastAPI, RLS on both tables and the `plant-images` bucket, and frontend login screens (Stitch → Antigravity per section 2b). Note `GET /stats` and `GET /disease-info/{label}` will need a decision: per-user stats (scoped by `user_id`) vs global.
+- Browsers cache tab icons hard. If an icon change doesn’t show, hard-refresh (Ctrl+Shift+R) or open the site in a private window.
 
 ## 10. Next session starter prompt
 Copy everything below (with the current PROJECT_CONTEXT.md pasted in) to start the next session.
@@ -240,20 +265,19 @@ Read it fully before answering, including the architecture section and the worki
 
 [PASTE THE FULL CONTENTS OF PROJECT_CONTEXT.md HERE]
 
-CURRENT PHASE: Phase 6 (Polish), then Phase 7 (Auth), then Phase 8 (Ship)
-WHAT I'M DOING RIGHT NOW: Phases 0-5 and 6b are complete (Gemini leaf pre-check + cached
-advice working; motion frontend redesign done, Detail shows cached advice). The model stays
-PlantVillage-only (section 8). I'm starting Phase 6 (Polish); I'll give the specific
-instructions in this session. Note that a feedback control already exists on the Detail
-screen, so help me scope what is actually left.
+CURRENT PHASE: Phase 7 (Auth), then Phase 8 (Ship)
+WHAT I'M DOING RIGHT NOW: Phases 0-6b are complete (Gemini leaf pre-check + cached advice;
+motion frontend redesign; Phase 6 polish: photo tips, stats page, evaluation write-up,
+type-ahead History filter). The model stays PlantVillage-only (section 8). I'm starting
+Phase 7 (Auth); I'll give the specific instructions in this session.
 BACKEND PLATFORM: local venv (backend on localhost:8000, frontend on localhost:3000)
-PROBLEM OR TASK: <fill in: what you want done for Phase 6>
+PROBLEM OR TASK: <fill in: what you want done for Phase 7>
 
 RULES
 - Follow section 2b's "who does what" - if a task belongs to Stitch, Antigravity,
   Google AI Studio, or another named tool/person, say so and don't silently do it
   yourself instead. Ask me first if you're unsure whose job something is.
-- Only work on the current phase (Phase 6). Do not start Phase 7/8 work.
+- Only work on the current phase (Phase 7). Do not start Phase 8 work.
 - Follow the folder structure, file names and paths in PROJECT_CONTEXT.md exactly
   - root folder is `project/`, not `plant-disease-classifier/`.
 - Before assuming any API response shape, check section 6 - it is confirmed

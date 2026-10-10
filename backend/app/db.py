@@ -144,3 +144,54 @@ def upsert_disease_info(label: str, advice: dict) -> None:
         },
         on_conflict="label",
     ).execute()
+
+
+# --- stats: read-only counts over `predictions` (Phase 6) ---
+
+def _count(query) -> int:
+    return query.execute().count or 0
+
+
+def get_stats(top_n: int = 5) -> dict:
+    """Counts for the stats page. Uncertain scans are left out of the top-diseases
+    list because their top label is probably wrong (section 8). The top-diseases
+    tally pages through the table 1000 rows at a time because PostgREST has no
+    GROUP BY; fine for a personal-scale table."""
+    client = get_client()
+
+    def base():
+        return client.table("predictions").select("id", count="exact").limit(1)
+
+    total = _count(base())
+    uncertain = _count(base().eq("is_uncertain", True))
+    feedback_yes = _count(base().eq("feedback_correct", True))
+    feedback_no = _count(base().eq("feedback_correct", False))
+
+    counts: dict[str, int] = {}
+    page_size = 1000
+    start = 0
+    while True:
+        rows = (
+            client.table("predictions")
+            .select("predicted_label")
+            .eq("is_uncertain", False)
+            .order("id")
+            .range(start, start + page_size - 1)
+            .execute()
+            .data
+        )
+        for row in rows:
+            label = row["predicted_label"]
+            counts[label] = counts.get(label, 0) + 1
+        if len(rows) < page_size:
+            break
+        start += page_size
+
+    top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:top_n]
+    return {
+        "total_scans": total,
+        "uncertain_scans": uncertain,
+        "feedback_yes": feedback_yes,
+        "feedback_no": feedback_no,
+        "top_diseases": [{"label": label, "count": n} for label, n in top],
+    }

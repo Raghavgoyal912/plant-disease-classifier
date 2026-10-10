@@ -19,7 +19,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "PatraVyadhi — Plant Disease Classifier",
+  title: "PatraVyadhi",
   description:
     "Upload a leaf photo and get an instant disease classification.",
 };

@@ -98,7 +98,7 @@ export default function PredictionDetailPage() {
   if (loading) {
     return (
       <div className="py-16 text-center">
-        <p className="font-typewriter text-lg text-text">Loading specimen dossier...</p>
+        <p className="font-typewriter text-lg text-text">Loading...</p>
       </div>
     );
   }
@@ -106,7 +106,7 @@ export default function PredictionDetailPage() {
   if (error) {
     return (
       <div className="mx-auto max-w-md rounded-2xl border border-leaf/20 bg-surface-raised p-8 text-center my-8">
-        <p className="font-typewriter text-lg text-text mb-2">Unable to load specimen</p>
+        <p className="font-typewriter text-lg text-text mb-2">Couldn't load this scan</p>
         <p className="text-sm text-text/70 mb-4">{error}</p>
         <Link
           href="/history"
@@ -150,23 +150,15 @@ export default function PredictionDetailPage() {
             <span>&larr;</span>
             <span>Back to history</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="rounded-full border border-leaf/20 bg-surface-raised px-3 py-1 text-xs text-leaf font-medium">
-              Archived dossier
-            </span>
-          </div>
         </div>
 
         {/* Title & Headline */}
         <header className="mb-8 text-left">
-          <p className="text-xs uppercase tracking-widest text-text/60 font-medium mb-1">
-            Diagnostic identification record
-          </p>
           <motion.h1
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.35 }}
-            className="font-typewriter text-3xl sm:text-4xl md:text-5xl text-text font-normal tracking-tight text-left capitalize"
+            className="font-typewriter text-3xl sm:text-4xl md:text-5xl text-text font-normal tracking-tight text-left"
           >
             {formatLabel(prediction.predicted_label)}
           </motion.h1>
@@ -182,7 +174,7 @@ export default function PredictionDetailPage() {
         {/* Uncertain Banner */}
         {prediction.is_uncertain && (
           <div className="mb-6 rounded-2xl border border-accent/40 bg-accent/15 px-4 py-3 text-sm text-text">
-            This prediction was below the diagnostic confidence threshold. The identification may be indeterminate.
+            We weren't sure about this scan.
           </div>
         )}
 
@@ -201,10 +193,6 @@ export default function PredictionDetailPage() {
                 className="h-full w-full object-cover"
               />
             </div>
-            <div className="mt-3 flex items-center justify-between px-1 text-xs text-text/60">
-              <span>Specimen capture</span>
-              <span className="font-typewriter">PV-REC</span>
-            </div>
           </div>
 
           {/* Right Column: Lilac Assessment Card & Diagnostics */}
@@ -212,8 +200,8 @@ export default function PredictionDetailPage() {
             {/* Neural Confidence Gauge */}
             <div>
               <div className="flex items-baseline justify-between mb-2">
-                <span className="text-xs uppercase tracking-wider text-text/60 font-medium">
-                  Neural confidence
+                <span className="text-xs text-text/60 font-medium">
+                  Confidence
                 </span>
                 <span className="font-typewriter text-2xl text-text font-normal">
                   {formatPercent(prediction.confidence)}
@@ -224,8 +212,8 @@ export default function PredictionDetailPage() {
 
             {/* Top 3 Alternative Candidates */}
             <div className="rounded-2xl border border-leaf/15 bg-surface-raised/80 p-4 text-left">
-              <span className="text-xs uppercase tracking-wider text-text/60 font-medium block mb-3">
-                Differential diagnostics
+              <span className="text-xs text-text/60 font-medium block mb-3">
+                Other possibilities
               </span>
               <ul className="space-y-3">
                 {prediction.top3.map((item, idx) => (
@@ -251,8 +239,8 @@ export default function PredictionDetailPage() {
 
             {/* Field Verification / Feedback Box */}
             <div className="rounded-2xl border border-leaf/15 bg-surface-raised/80 p-4 text-left">
-              <p className="text-xs uppercase tracking-wider text-text/60 font-medium mb-3">
-                Field verification: was this accurate?
+              <p className="text-xs text-text/60 font-medium mb-3">
+                Was this correct?
               </p>
               <div className="flex gap-2 mb-3">
                 <button
@@ -264,7 +252,7 @@ export default function PredictionDetailPage() {
                       : "bg-surface-raised text-text border border-leaf/25 hover:bg-background"
                   }`}
                 >
-                  Yes, accurate
+                  Yes
                 </button>
                 <button
                   type="button"
@@ -275,7 +263,7 @@ export default function PredictionDetailPage() {
                       : "bg-surface-raised text-text border border-leaf/25 hover:bg-background"
                   }`}
                 >
-                  No, incorrect
+                  No
                 </button>
               </div>
 
@@ -312,7 +300,7 @@ export default function PredictionDetailPage() {
                 disabled={deleting}
                 className="text-xs text-text/60 hover:text-text hover:underline transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-leaf"
               >
-                {deleting ? "Deleting..." : "Delete specimen"}
+                {deleting ? "Deleting..." : "Delete scan"}
               </button>
             </div>
           </div>

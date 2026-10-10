@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { listPredictions, PredictionRecord } from "@/lib/api";
 import { PredictionCard } from "@/components/PredictionCard";
+import { LabelCombobox } from "@/components/LabelCombobox";
 
 const PAGE_SIZE = 9;
 
@@ -63,24 +64,17 @@ export default function HistoryPage() {
       <div className="relative z-10 w-full">
         {/* Header */}
         <header className="mb-8 text-left">
-          <div className="flex items-center gap-2 text-leaf text-xs font-medium tracking-wide mb-2">
-            <span className="w-2 h-2 rounded-full bg-accent" />
-            <span>Herbarium archive</span>
-          </div>
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <h1 className="font-typewriter text-4xl sm:text-5xl md:text-6xl text-text font-normal tracking-tight text-left">
               Your scans.
             </h1>
-            <div className="w-full sm:w-72">
-              <input
-                type="text"
-                placeholder="Filter by label..."
+            <div className="w-full sm:w-80">
+              <LabelCombobox
                 value={labelFilter}
-                onChange={(e) => {
+                onChange={(label) => {
                   setPage(1);
-                  setLabelFilter(e.target.value);
+                  setLabelFilter(label);
                 }}
-                className="w-full rounded-2xl border border-leaf/20 bg-surface-raised px-4 py-2.5 text-sm text-text placeholder:text-text/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-leaf focus-visible:ring-offset-2 focus-visible:ring-offset-background transition-all"
               />
             </div>
           </div>
@@ -96,7 +90,7 @@ export default function HistoryPage() {
         {/* Error state */}
         {!loading && error && (
           <div className="rounded-2xl border border-leaf/20 bg-surface-raised p-8 text-center max-w-md mx-auto my-8">
-            <p className="font-typewriter text-lg text-text mb-2">Unable to load history</p>
+            <p className="font-typewriter text-lg text-text mb-2">Couldn't load your scans</p>
             <p className="text-sm text-text/70 mb-4">{error}</p>
             <button
               onClick={() => load()}
@@ -117,7 +111,7 @@ export default function HistoryPage() {
               Nothing here yet.
             </p>
             <p className="text-sm text-text/70 mb-6 font-normal">
-              Upload a leaf specimen to begin building your pathology archive.
+              Scan a leaf and it will show up here.
             </p>
             <Link
               href="/"
